@@ -1,0 +1,128 @@
+rules_version = '2';
+// Fanta Alpine Ski — regole di sicurezza del database (da incollare in Firebase → Firestore → Regole)
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.uid; }
+    // amministratori del sito: tutte le leghe, calendario, risultati, atleti, creazione delle leghe
+    function gadmin() {
+      return signedIn() && exists(/databases/$(database)/documents/config/admins)
+        && me() in get(/databases/$(database)/documents/config/admins).data.uids;
+    }
+    // chi non è amministratore crea leghe solo se l'amministratore lo permette
+    function openLeagues() {
+      return signedIn() && exists(/databases/$(database)/documents/config/site)
+        && get(/databases/$(database)/documents/config/site).data.get('openLeagues', false) == true;
+    }
+    // lo username dell'account, com'è dopo la scrittura in corso
+    function myName() { return getAfter(/databases/$(database)/documents/users/$(me())).data.get('name', ''); }
+    function leagueDoc(lid) { return get(/databases/$(database)/documents/leagues/$(lid)).data; }
+    // chi organizza la lega, o l'amministratore del sito
+    function ladmin(lid) { return signedIn() && (leagueDoc(lid).admin == me() || gadmin()); }
+    function member(lid) { return signedIn() && exists(/databases/$(database)/documents/leagues/$(lid)/members/$(me())); }
+    function inLeague(lid) { return ladmin(lid) || member(lid); }
+    function owns(lid, tid) { return get(/databases/$(database)/documents/leagues/$(lid)/teams/$(tid)).data.uid == me(); }
+
+    match /config/admins {
+      allow read: if signedIn();
+      // il primo che lo crea diventa amministratore; poi solo gli amministratori lo cambiano
+      allow create: if signedIn() && request.resource.data.uids == [me()];
+      allow update: if gadmin();
+    }
+    match /config/site {
+      allow read: if signedIn();
+      allow write: if gadmin();
+    }
+
+    // il profilo: lo username deve essere riservato a questo account in usernames/
+    match /users/{uid} {
+      allow read: if signedIn() && uid == me();
+      allow create, update: if signedIn() && uid == me()
+        && (!('name' in request.resource.data)
+            || (resource != null && resource.data.get('name', null) == request.resource.data.name)
+            || getAfter(/databases/$(database)/documents/usernames/$(request.resource.data.name.lower())).data.uid == me());
+    }
+    // usernames: uno per account, senza distinguere maiuscole e minuscole
+    match /usernames/{key} {
+      allow get: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == me()
+        && key.matches('^[a-z0-9._-]{3,20}$')
+        && myName().lower() == key;
+      allow delete: if signedIn() && resource.data.uid == me();
+    }
+
+    // codice invito → lega: si legge solo conoscendo il codice
+    match /codes/{code} {
+      allow get: if signedIn();
+      allow create: if signedIn()
+        && (getAfter(/databases/$(database)/documents/leagues/$(request.resource.data.lid)).data.admin == me() || gadmin());
+      allow delete: if signedIn() && (leagueDoc(resource.data.lid).admin == me() || gadmin());
+    }
+
+    // la lega contiene anche il mercato (market), le chiusure delle gare (locks) e le formazioni delle gare chiuse (archive):
+    // le scrive solo chi la organizza
+    match /leagues/{lid} {
+      allow get: if inLeague(lid);
+      allow list: if gadmin();
+      allow create: if (gadmin() || openLeagues()) && request.resource.data.admin == me();
+      allow update: if ladmin(lid) && request.resource.data.admin == resource.data.admin;
+      allow delete: if ladmin(lid);
+
+      match /members/{uid} {
+        allow read: if inLeague(lid);
+        // si entra solo con il codice giusto, senza squadra e con il proprio username
+        allow create: if signedIn() && uid == me()
+          && request.resource.data.code == leagueDoc(lid).code && request.resource.data.team == null
+          && request.resource.data.name == myName();
+        allow update: if ladmin(lid)
+          || (uid == me() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+              && request.resource.data.name == myName())
+          || (uid == me() && resource.data.team == null
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['team'])
+              && getAfter(/databases/$(database)/documents/leagues/$(lid)/teams/$(request.resource.data.team)).data.uid == me());
+        allow delete: if ladmin(lid) || uid == me();
+      }
+
+      match /teams/{tid} {
+        allow read: if inLeague(lid);
+        allow create, delete: if ladmin(lid);
+        // un partecipante senza squadra può prendere una squadra libera, una sola; cambiarla la può solo chi organizza
+        allow update: if ladmin(lid)
+          || (member(lid) && resource.data.uid == null && request.resource.data.uid == me()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'owner'])
+              && get(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == null
+              && getAfter(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == tid);
+      }
+
+      // le formazioni della squadra per le prossime gare: le vedono solo la squadra e chi organizza
+      match /pending/{tid} {
+        allow read, write: if ladmin(lid) || (member(lid) && owns(lid, tid));
+      }
+
+      // la formazione che conta: la scrive solo chi ha la squadra e solo prima della chiusura della gara;
+      // gli altri la vedono dopo la chiusura
+      match /races/{rid}/lineups/{tid} {
+        function lock() { return leagueDoc(lid).locks[rid]; }
+        allow read: if ladmin(lid) || (member(lid) && (request.time > lock() || owns(lid, tid)));
+        allow create, update: if signedIn() && request.resource.data.at == request.time
+          && (ladmin(lid)
+              || (member(lid) && owns(lid, tid) && request.resource.data.uid == me() && request.time < lock()));
+        allow delete: if ladmin(lid);
+      }
+    }
+
+    // correzioni dell'amministratore a risultati, calendario e atleti (i dati base sono nei file del sito)
+    match /results/{rid} {
+      allow read: if signedIn();
+      allow write: if gadmin();
+    }
+    match /races/{rid} {
+      allow read: if signedIn();
+      allow write: if gadmin();
+    }
+    match /athletes/{aid} {
+      allow read: if signedIn();
+      allow write: if gadmin();
+    }
+  }
+}
