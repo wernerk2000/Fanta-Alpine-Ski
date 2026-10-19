@@ -1,0 +1,37 @@
+/* website additions: page reset (the artifact shell used to provide it), sign-in screens, members list */
+body { margin: 0; min-height: 100vh; }
+[hidden] { display: none !important; }
+.authbox { max-width: 460px; }
+.authbox .h1 { margin: 10px 0 12px; }
+.authbox form .btn { justify-self: start; }
+.linkb { appearance: none; background: none; border: 0; padding: 0; color: var(--speed); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font: inherit; }
+.ok { font-size: 13px; color: var(--ok); }
+.mrow { display: flex; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.codev { font-size: 17px; letter-spacing: .12em; }
+.codein { font-family: var(--f-mono); letter-spacing: .14em; text-transform: uppercase; }
+a.mini { display: inline-flex; align-items: center; text-decoration: none; }
+#invlink { font-size: 14px; }
+
+/* home: the two ways in (create a league, enter one with its code) */
+.opts { display: grid; gap: 12px; margin-top: 14px; }
+.opt { display: grid; gap: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 14px; }
+.opt.locked { background: var(--sunk); }
+.opt form .btn { justify-self: start; }
+
+/* team picker, right after entering a league */
+.picks { display: grid; border-top: 2px solid var(--ink); margin-top: 10px; }
+.pickrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; width: 100%; padding: 13px 2px; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.pickrow .tn { font-size: 17px; }
+.pickrow .to { text-align: right; }
+button.pickrow:hover .tn { text-decoration: underline; text-underline-offset: 3px; }
+.pickrow.taken { cursor: default; }
+.pickrow.taken .tn { font-weight: 500; color: var(--ink3); }
+.pickrow.on { background: var(--sunk); padding-inline: 10px; cursor: default; }
+.pickrow.on .confirm { background: var(--surface); }
+.pickrow.on .confirm > span { flex: 1 1 100%; }
+
+/* Gestione → Squadre: one card per team, with who plays it */
+.tcard { display: grid; gap: 8px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.tline { display: grid; grid-template-columns: 9ch minmax(0, 1fr); gap: 8px; align-items: center; }
+.tline > span { font-size: 13px; color: var(--ink2); }
+.tcard .acts { justify-content: flex-end; }

@@ -1,0 +1,11 @@
+# generated
+build/
+site/dist/
+fanta-ski.html
+fanta-ski-leghe.json
+__pycache__/
+*.pyc
+node_modules/
+# local test data
+tests/leghe_test.json
+*.png
