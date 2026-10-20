@@ -157,7 +157,8 @@ function rules(method, path, ctx) {
       if (method === 'create' || method === 'delete') return T(() => ladmin(lid));
       if (method === 'update') return T(() => ladmin(lid))
         || (member(lid) && od.uid == null && nd.uid === me && only(diff(), ['uid', 'owner'])
-          && T(() => pre('leagues/' + lid + '/members/' + me).team == null) && T(() => post('leagues/' + lid + '/members/' + me).team === tid));
+          && T(() => pre('leagues/' + lid + '/members/' + me).team == null) && T(() => post('leagues/' + lid + '/members/' + me).team === tid))
+        || (member(lid) && od.uid === me && only(diff(), ['name']) && typeof nd.name === 'string' && nd.name.trim().length > 0 && nd.name.length <= 30);
     }
     if (seg[2] === 'pending' && seg.length === 4) {
       const tid = seg[3];

@@ -86,12 +86,18 @@ service cloud.firestore {
       match /teams/{tid} {
         allow read: if inLeague(lid);
         allow create, delete: if ladmin(lid);
-        // un partecipante senza squadra può prendere una squadra libera, una sola; cambiarla la può solo chi organizza
+        // un partecipante senza squadra può prendere una squadra libera, una sola; cambiarla la può solo chi organizza.
+        // chi ha la squadra può cambiarle il nome (da 1 a 30 caratteri), e nient'altro
         allow update: if ladmin(lid)
           || (member(lid) && resource.data.uid == null && request.resource.data.uid == me()
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'owner'])
               && get(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == null
-              && getAfter(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == tid);
+              && getAfter(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == tid)
+          || (member(lid) && resource.data.uid == me()
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+              && request.resource.data.name is string
+              && request.resource.data.name.trim().size() > 0
+              && request.resource.data.name.size() <= 30);
       }
 
       // le formazioni della squadra per le prossime gare: le vedono solo la squadra e chi organizza

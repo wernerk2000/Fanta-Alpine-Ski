@@ -218,6 +218,23 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   await page.screenshot({ path: OUT + 'site_invite.png' });
   await click('[data-act="pickskip"]'); await wait(80);
   ok(/Non hai ancora una squadra/.test(await txt()), 'skipping: the league opens, with a reminder');
+
+  // 10. a player names his own team, and only his own
+  await logout(); await login('nico@example.it', 'nicopass');
+  await click('#tab-squadre'); await wait(80);
+  await click('[data-act="ren"]'); await wait(40);
+  await page.fill('#trn', '  I   Fulmini  '); await click('form[data-form="tname"] button[type="submit"]'); await wait(150);
+  L = await league();
+  ok(L.teams.find(x => x.id === nicoTeam).name === 'I Fulmini' && /I Fulmini/.test(await page.textContent('h1')), 'Nico renamed his team «I Fulmini» (spaces tidied)');
+  ok(/si chiama «I Fulmini»/.test(await page.textContent('#fs-toast')), 'confirmation message');
+  await click('[data-act="tsel"]:has-text("Squadra 5")'); await wait(60);
+  ok(!(await page.$('[data-act="ren"]')), 'no rename button on someone else\'s team');
+  const other = await page.evaluate(t => window.DB.op({ k: 'teamSet', id: t, name: 'Rubata' }).then(() => 'renamed', e => e.code), t5);
+  ok(other === 'permission-denied', 'database refuses renaming another team');
+  const long = await page.evaluate(t => window.DB.op({ k: 'teamSet', id: t, name: 'x'.repeat(31) }).then(() => 'renamed', e => e.code), nicoTeam);
+  ok(long === 'permission-denied', 'database refuses a name longer than 30 characters');
+  await click('#tab-regole');
+  ok(/Il nome della squadra lo scegli tu/.test(await txt()), 'rules say so');
   await page.goto('http://site.test/?invito=ZZZZZZ', { waitUntil: 'domcontentloaded' }); await wait(400);
   ok(/non vale più/.test(await page.textContent('#fs-toast')), 'an old invite link says so');
   ok(!errors.length, 'no page errors ' + JSON.stringify(errors));

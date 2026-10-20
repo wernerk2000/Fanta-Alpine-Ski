@@ -318,6 +318,11 @@
     var h = '<section class="sec"><div class="chips scroll">' + S.teams.map(function (x) { return '<button type="button" class="chip' + (x.id === tid ? ' on' : '') + '" data-act="tsel" data-v="' + x.id + '">' + esc(x.name) + (mine && mine.id === x.id ? ' · tu' : !mine && CAN && !x.uid ? ' · libera' : '') + '</button>'; }).join('') + '</div>';
     h += '<div class="thead"><div><div class="lbl">' + (mine && mine.id === tid ? 'La tua squadra' : ownerName(t) ? esc(ownerName(t)) : 'Squadra') + '</div><h1 class="h1">' + esc(t.name) + '</h1></div><div class="tstats">' +
       stat('Punti', fmt(tt.total)) + stat('Tecniche', fmt(tt.byC.T)) + stat('Veloci', fmt(tt.byC.V)) + stat('Crediti', ts.credits) + stat('Rosa', ts.size + '/' + ts.max) + '</div></div>';
+    if (OWNER || (mine && mine.id === tid)) {
+      if (tmp.ren === tid) h += '<form class="renbox" data-form="tname" novalidate><label class="field" for="trn"><span>Nome della squadra, al massimo 30 caratteri</span><input id="trn" class="in" maxlength="30" autocomplete="off" value="' + esc(t.name) + '"></label>' +
+        '<div class="acts"><button type="submit" class="btn red"' + (tmp.busy ? ' disabled' : '') + '>Salva il nome</button><button type="button" class="btn ghost" data-act="renno">Annulla</button></div></form>';
+      else h += '<div class="acts renrow"><button type="button" class="mini" data-act="ren" data-v="' + tid + '">Rinomina la squadra</button></div>';
+    }
     if (CAN && ME && !t.uid && !mine) h += '<div class="capbox"><span>Squadra libera. È la tua? Prendila per scegliere le formazioni: si fa una volta sola.</span><button type="button" class="btn ghost" data-act="claim" data-v="' + tid + '">Sì, è la mia</button></div>';
     FS.GENDERS.forEach(function (g) {
       var rows = ts.roster.filter(function (p) { var a = ath(p.a); return a && a.g === g; });
@@ -560,7 +565,8 @@
     var scaleTxt = (L.scale === 'lin' ? 'Scala lineare: 30 punti al 1°, 29 al 2° e così via fino a 1 punto al 30°.' : 'Punti di Coppa del Mondo dal 1° al 30° posto.') +
       (L.bonus30 ? ' In più, ' + L.bonus30 + ' punti di bonus per ogni arrivo nei primi 30.' : '');
     return '<section class="sec"><div class="lbl">Regolamento</div><h1 class="h1">Come si gioca</h1><div class="rules gap">' +
-      block('Rosa', ['Ogni squadra ha ' + per + ' uomini e ' + per + ' donne, senza vincoli di disciplina: puoi prendere solo slalomisti o solo discesisti.']) +
+      block('Rosa', ['Ogni squadra ha ' + per + ' uomini e ' + per + ' donne, senza vincoli di disciplina: puoi prendere solo slalomisti o solo discesisti.',
+        'Il nome della squadra lo scegli tu: lo cambi quando vuoi dalla pagina della tua squadra, con «Rinomina la squadra».']) +
       block('Asta', ['Ogni squadra ha ' + L.budget + ' crediti e ogni atleta può stare in una sola squadra.',
         'Offerta massima = crediti residui − posti vuoti + 1, così nessuno resta con la rosa incompleta.',
         'La quotazione del listone è il prezzo di partenza: punti di Coppa 2025/26 diviso 20, minimo 1.',
@@ -1057,7 +1063,9 @@
     switch (act) {
       case 'tab': go(v); break;
       case 'team': ui.team = v; tmp.lu = null; go('squadre'); break;
-      case 'tsel': ui.team = v; tmp.rel = null; tmp.lu = null; saveUi(); render(); break;
+      case 'tsel': ui.team = v; tmp.rel = null; tmp.lu = null; tmp.ren = null; saveUi(); render(); break;
+      case 'ren': tmp.ren = v; render(); var ri = D.getElementById('trn'); if (ri) { ri.focus(); ri.select(); } break;
+      case 'renno': tmp.ren = null; render(); break;
       case 'gf': ui.gf = v; saveUi(); render(); break;
       case 'cl': ui.cl = v; saveUi(); render(); if (el.classList.contains('cup')) window.scrollTo(0, 0); break;
       case 'race': tmp.race = tmp.race === v ? null : v; render(); break;
@@ -1088,7 +1096,7 @@
         tmp.busy = true; render();
         DBX.claimTeam(S.lid, v).then(function () {
           tmp.busy = false; tmp.pickT = null; ui.team = v; ui.tab = 'squadre'; saveUi(); render(); window.scrollTo(0, 0);
-          toast('Fatto: sei «' + (pt ? pt.name : 'la tua squadra') + '». Qui scegli la formazione per ogni gara.');
+          toast('Fatto: sei «' + (pt ? pt.name : 'la tua squadra') + '». Qui scegli la formazione per ogni gara e puoi dare un nome alla squadra.');
         }, function (e) { tmp.busy = false; tmp.pickT = null; toast(e && e.code === 'permission-denied' ? 'Questa squadra non è più libera: scegline un\'altra.' : errText(e)); render(); });
         break;
       case 'allload': DBX.allLeagues().then(function (list) { tmp.all = list; render(); }, function (e) { toast(errText(e)); }); break;
@@ -1305,6 +1313,18 @@
     }
     if (k === 'login') busy(DBX.login(val('le').trim(), val('lp')));
     else if (k === 'register') busy(DBX.register(val('re').trim(), val('rp')));
+    else if (k === 'tname') {
+      var tr = tmp.ren && team(tmp.ren), nn = val('trn').replace(/\s+/g, ' ').trim();
+      if (!tr) return;
+      if (!nn) { toast('Scrivi un nome per la squadra.'); return; }
+      if (nn.length > 30) { toast('Il nome può avere al massimo 30 caratteri.'); return; }
+      if (nn === tr.name) { tmp.ren = null; render(); return; }
+      var pn = doOp({ k: 'teamSet', id: tr.id, name: nn });
+      if (pn) {
+        tmp.busy = true; render();
+        pn.then(function (ok) { tmp.busy = false; if (ok) { tmp.ren = null; toast('La squadra adesso si chiama «' + nn + '».'); } render(); });
+      }
+    }
     else if (k === 'uname') {
       tmp.unameVal = val('un').trim(); tmp.busy = true; tmp.nameErr = ''; render();
       DBX.setName(tmp.unameVal).then(function () { tmp.busy = false; tmp.unameVal = ''; render(); },

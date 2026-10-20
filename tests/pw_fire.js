@@ -223,6 +223,19 @@ async function flowA(browser) {
   D = await H.docs();
   ok(D['usernames/nicola'] && !D['usernames/nico'] && D['users/' + nUid].name === 'Nicola' && D['leagues/' + lid + '/members/' + nUid].name === 'Nicola', 'username changed: new one reserved, old one freed, league member renamed');
 
+  // Nico names his own team; the rules allow only that (he is in two leagues: back to Ski Team Paganella first)
+  if (await page.$('#lgsel')) { await page.selectOption('#lgsel', lid); await H.wait(300); }
+  await H.click('#tab-squadre'); await H.wait(150);
+  await H.click('[data-act="ren"]'); await page.fill('#trn', 'I Fulmini');
+  await H.click('form[data-form="tname"] button[type="submit"]'); await H.wait(400);
+  D = await H.docs();
+  ok(D['leagues/' + lid + '/teams/' + nicoTeam].name === 'I Fulmini', 'Nico renamed his team «I Fulmini»');
+  const t5 = teamId('Squadra 5');
+  ok(await H.raw("return m.updateDoc(m.doc(db, 'leagues', a.l, 'teams', a.t), { name: 'Rubata' })", { l: lid, t: t5 }) === 'permission-denied', 'rules: nobody renames another team');
+  ok(await H.raw("return m.updateDoc(m.doc(db, 'leagues', a.l, 'teams', a.t), { name: 'Fulmini 2', owner: 'Werner' })", { l: lid, t: nicoTeam }) === 'permission-denied', 'rules: with the name, nothing else changes');
+  ok(await H.raw("return m.updateDoc(m.doc(db, 'leagues', a.l, 'teams', a.t), { name: 'x'.repeat(31) })", { l: lid, t: nicoTeam }) === 'permission-denied', 'rules: at most 30 characters');
+  ok(await H.raw("return m.updateDoc(m.doc(db, 'leagues', a.l, 'teams', a.t), { name: '   ' })", { l: lid, t: nicoTeam }) === 'permission-denied', 'rules: not blank');
+
   // invite link: Dori signs up, picks the username, is asked for her team
   await H.logout();
   await page.goto('http://site.test/?invito=' + code, { waitUntil: 'domcontentloaded' }); await H.wait(400);

@@ -270,3 +270,7 @@ button.pickrow:hover .tn { text-decoration: underline; text-underline-offset: 3p
 .tline { display: grid; grid-template-columns: 9ch minmax(0, 1fr); gap: 8px; align-items: center; }
 .tline > span { font-size: 13px; color: var(--ink2); }
 .tcard .acts { justify-content: flex-end; }
+
+/* renaming one's own team */
+.renrow { margin-top: 10px; }
+.renbox { display: grid; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }

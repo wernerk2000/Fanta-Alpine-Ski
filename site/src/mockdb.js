@@ -192,8 +192,10 @@
       case 'teamAdd': if ((x = need(admin))) return x; L.teams.push({ id: o.id, name: o.name, owner: o.owner || '', uid: null, ord: L.teams.length + 1 }); return done();
       case 'teamDel': if ((x = need(admin))) return x; L.teams = L.teams.filter(function (t) { return t.id !== o.id; }); return done();
       case 'teamSet':
-        if ((x = need(admin))) return x;
         var t = FS.findBy(L.teams, o.id);
+        if (!t) return err('fs/no-team');
+        // the team's player may rename it, nothing else
+        if (!admin && !(isMember(lid) && t.uid === me && o.name != null && o.owner == null && o.uid == null && String(o.name).trim() && String(o.name).length <= 30)) return err('permission-denied');
         if (o.name != null) t.name = o.name;
         if (o.owner != null) t.owner = o.owner;
         if (o.uid != null && !o.uid) { if (t.uid && L.members[t.uid]) L.members[t.uid].team = null; t.uid = null; }
