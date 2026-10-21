@@ -193,6 +193,29 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   await click('[data-act="lg"][data-v="F"]'); await wait(60);
   ok((await page.$$eval('#llist .lrow .an', els => els[2].textContent)) === '4. Emma Aicher', 'filtering women keeps the overall rank');
   await click('[data-act="lg"][data-v=""]');
+  // injuries: badge and note in the listone; the administrator changes the status from Gestione → Atleti
+  await page.fill('#lq', 'kilde'); await wait(80);
+  t = await page.textContent('#llist');
+  ok(/Stagione finita/.test(t) && /tendine d.Achille/.test(t), 'listone: Kilde out for the season, with the note');
+  await page.fill('#lq', 'odermatt'); await wait(80);
+  ok(!(await page.$('#llist .injt')), 'listone: no badge for a fit athlete');
+  await page.fill('#lq', '');
+  ok(await page.$$eval('#llist .injt', b => b.length) >= 6, 'listone: every injured athlete flagged');
+  await click('#tab-gestione'); await click('[data-act="adm"][data-v="atleti"]'); await wait(60);
+  await page.fill('#eq', 'feller'); await wait(80); await click('[data-act="epick"]'); await wait(60);
+  ok(await page.$eval('#xs', s => s.value) === 'short', 'athlete editor shows the current status');
+  await page.selectOption('#xs', 'long'); await page.fill('#xn', 'Schiena, rientro a gennaio');
+  await click('[data-act="asave"]'); await wait(150);
+  ok(await page.evaluate(() => window.__mock.store.ovr.athletes['m-manuel-feller'].inj === 'long'), 'status saved for the whole site');
+  await click('#tab-listone'); await page.fill('#lq', 'feller'); await wait(80);
+  t = await page.textContent('#llist');
+  ok(/Infortunato/.test(t) && /rientro a gennaio/.test(t), 'listone shows the new status');
+  await click('#tab-gestione'); await click('[data-act="adm"][data-v="atleti"]'); await wait(60);
+  await page.fill('#eq', 'feller'); await wait(80); await click('[data-act="epick"]'); await wait(60);
+  await page.selectOption('#xs', ''); await click('[data-act="asave"]'); await wait(150);
+  await click('#tab-listone'); await page.fill('#lq', 'feller'); await wait(80);
+  ok(!(await page.$('#llist .injt')), 'Disponibile clears the badge');
+  await page.fill('#lq', '');
 
   // 8. who may create leagues; every league of the site
   await click('#tab-gestione'); await click('[data-act="adm"][data-v="leghe"]'); await wait(60);

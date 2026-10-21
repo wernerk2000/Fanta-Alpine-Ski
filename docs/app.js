@@ -160,6 +160,11 @@
   function best(a) { var b = 0, bi = -1; (a.p || []).forEach(function (v, i) { if (v > b) { b = v; bi = i; } }); return bi >= 0 ? DCODES[bi] : null; }
   function bib(a) { var d = best(a); return '<span class="bib ' + (d ? FS.CAT[d] : 'N') + '" title="' + (d ? 'Specialità: ' + DISC[d] : 'Nessun punto nell\'ultima stagione') + '">' + (d || '–') + '</span>'; }
   function disc(t) { return '<span class="disc ' + FS.CAT[t] + '" title="' + DISC[t] + '">' + t + '</span>'; }
+  // injuries and absences (data/status.json, or Gestione → Atleti): out = misses the season, long = injured with an
+  // uncertain return, short = misses the first races, doubt = may miss the first races
+  var INJ = { out: 'Stagione finita', long: 'Infortunato', short: 'Salta le prime gare', doubt: 'In dubbio' };
+  var INJOPT = [['', 'Disponibile'], ['doubt', 'In dubbio per le prime gare'], ['short', 'Salta le prime gare'], ['long', 'Infortunato, rientro incerto'], ['out', 'Fuori per tutta la stagione']];
+  function injTag(a) { return a && INJ[a.inj] ? ' <span class="injt ' + a.inj + '" title="' + esc(a.note || '') + '">' + INJ[a.inj] + '</span>' : ''; }
   function dpts(a) { var s = DCODES.map(function (d, i) { return a.p && a.p[i] ? d + ' ' + a.p[i] : ''; }).filter(Boolean).join(' · '); return s || 'nessun punto'; }
   function short(a) { var p = a.n.split(' '); return p.length > 1 ? p.slice(1).join(' ') : a.n; }
   function stat(k, v) { return '<div class="stat"><span class="k">' + k + '</span><span class="v">' + v + '</span></div>'; }
@@ -287,7 +292,7 @@
     var h = '<div class="lued"><p class="small muted">' + GLAB[r.g] + ' · ' + DISC[r.t] + ' ' + esc(r.v) + '. Accanto al nome, i punti fatti in questa disciplina nell\'ultima stagione.</p>';
     e.roster.slice().sort(function (x, y) { return (ath(y).p[di] - ath(x).p[di]) || (ath(y).q - ath(x).q); }).forEach(function (aid) {
       var a = ath(aid), s = sel[aid] || '';
-      h += '<div class="luath">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + '</span><span class="lmeta">' + r.t + ' ' + esc(a.tpy || '25/26') + ': <span class="num">' + (a.p ? a.p[di] : 0) + '</span> pt</span></span>' +
+      h += '<div class="luath">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + '</span>' + injTag(a) + '<span class="lmeta">' + r.t + ' ' + esc(a.tpy || '25/26') + ': <span class="num">' + (a.p ? a.p[di] : 0) + '</span> pt' + (a.inj ? ' · ' + esc(a.note || '') : '') + '</span></span>' +
         '<span class="seg" role="group" aria-label="Scelta per ' + esc(a.n) + '">' + segBtn(aid, 'T', 'Titolare', s) + segBtn(aid, 'R', 'Riserva', s) + segBtn(aid, '', 'Fuori', s) + '</span></div>';
     });
     h += '<div class="acts between"><span class="small muted">Titolari ' + nT + '/' + max + ' · riserva ' + nR + '/1</span><span class="acts"><button type="button" class="btn ghost" data-act="luclose">Annulla</button>' +
@@ -329,7 +334,7 @@
       h += '<div class="rg"><div class="rgh"><span class="lbl">' + GLAB[g] + '</span><span class="num small muted">' + rows.length + '/' + ts.per + '</span></div>';
       rows.forEach(function (p) {
         var a = ath(p.a);
-        h += '<div class="arow">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + '</span><span class="lmeta">' + esc(a.tpy || '25/26') + ': ' + dpts(a) + '</span>' +
+        h += '<div class="arow">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + '</span>' + injTag(a) + '<span class="lmeta">' + esc(a.tpy || '25/26') + ': ' + dpts(a) + '</span>' +
           (OWNER && tmp.rel !== p.id ? '<button type="button" class="mini" data-act="rel" data-v="' + p.id + '">Svincola</button>' : '') + '</span><span class="ap num">' + p.price + ' cr</span><span class="apt num">' + fmt(tt.byA[a.id] || 0) + '</span>';
         if (OWNER && tmp.rel === p.id) {
           var ref = Math.floor(p.price * (S.league.refundPct || 0) / 100);
@@ -480,14 +485,14 @@
     var h = '<p class="small muted">' + arr.length + (arr.length === 1 ? ' atleta' : ' atleti') + '</p>';
     h += arr.map(function (a) {
       var o = FS.ownerNow(S, a.id), cur = C.ath[a.id];
-      return '<div class="lrow">' + bib(a) + '<span><span class="an"><span class="rk" title="Posizione nella classifica delle quotazioni">' + QR[a.id] + '.</span> ' + esc(a.n) + '</span> <span class="nat">' + esc(a.c) + '</span><span class="lmeta">' + (a.g === 'M' ? 'Uomo' : 'Donna') + ' · ' + esc(a.tpy || '25/26') + ': ' + dpts(a) +
+      return '<div class="lrow">' + bib(a) + '<span><span class="an"><span class="rk" title="Posizione nella classifica delle quotazioni">' + QR[a.id] + '.</span> ' + esc(a.n) + '</span> <span class="nat">' + esc(a.c) + '</span>' + injTag(a) + '<span class="lmeta">' + (a.g === 'M' ? 'Uomo' : 'Donna') + ' · ' + esc(a.tpy || '25/26') + ': ' + dpts(a) +
         (cur ? ' · 26/27: <span class="num">' + cur + '</span> pt' : '') + '</span>' + (a.note ? '<span class="note">' + esc(a.note) + '</span>' : '') +
         (o ? '<span class="own">' + esc(tname(o.t)) + ' · ' + o.price + ' cr</span>' : '<span class="own free">Libero</span>') + '</span><span class="lq num"><small>Quot.</small>' + a.q + '</span></div>';
     }).join('');
     return h;
   }
   function vListone() {
-    var h = '<section class="sec"><div class="lbl">Listone</div><h1 class="h1">Atleti e quotazioni</h1><p class="sub">Quotazione = punti di Coppa 2025/26 in tutte le discipline diviso 20, minimo 1. È il prezzo di partenza all\'asta. Il numero davanti al nome è la posizione nella classifica delle quotazioni, uomini e donne insieme. La sigla colorata è la disciplina in cui l\'atleta ha fatto più punti.</p>';
+    var h = '<section class="sec"><div class="lbl">Listone</div><h1 class="h1">Atleti e quotazioni</h1><p class="sub">Quotazione = punti di Coppa 2025/26 in tutte le discipline diviso 20, minimo 1. È il prezzo di partenza all\'asta. Il numero davanti al nome è la posizione nella classifica delle quotazioni, uomini e donne insieme. La sigla colorata è la disciplina in cui l\'atleta ha fatto più punti. Le etichette segnalano infortuni e assenze, con i dettagli sotto il nome.</p>';
     h += '<label class="field" for="lq"><span>Cerca</span><input id="lq" class="in" type="search" autocomplete="off" placeholder="Nome o nazione, es. ITA" value="' + esc(ui.lq) + '"></label>';
     h += '<div class="chips">' + chipset('lg', [['', 'Tutti'], ['M', 'Uomini'], ['F', 'Donne']], ui.lg) + '<button type="button" class="chip' + (ui.lfree ? ' on' : '') + '" data-act="lfree" aria-pressed="' + ui.lfree + '">Solo liberi</button></div>';
     h += '<div class="chips">' + chipset('ld', [['', 'Tutte le discipline'], ['DH', 'Discesa'], ['SG', 'SuperG'], ['GS', 'Gigante'], ['SL', 'Slalom']], ui.ld) + '</div>';
@@ -613,7 +618,7 @@
     if (!arr.length) return '<p class="hint">Nessun atleta libero con questo nome. Se manca dal listone, aggiungilo da Atleti.</p>';
     return arr.map(function (a) {
       var full = ts.slots[a.g] >= ts.per;
-      return '<button type="button" class="hit' + (full ? ' dis' : '') + '" data-act="apick" data-v="' + a.id + '">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + ' · ' + a.g + '</span>' +
+      return '<button type="button" class="hit' + (full ? ' dis' : '') + '" data-act="apick" data-v="' + a.id + '">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + ' · ' + a.g + '</span>' + injTag(a) +
         (full ? ' <span class="small muted">' + (a.g === 'M' ? 'uomini' : 'donne') + ' al completo</span>' : '') + '</span><span class="lq num"><small>Quot.</small>' + a.q + '</span></button>';
     }).join('');
   }
@@ -627,7 +632,7 @@
     var price = parseInt(tmp.price, 10);
     if (!(price >= 1)) price = a.q;
     var chk = buyCheck(a, price);
-    return '<div class="pick"><div class="pickh">' + bib(a) + '<div><b>' + esc(a.n) + '</b> <span class="nat">' + esc(a.c) + '</span><div class="small muted">' + GLAB[a.g] + ' · ' + dpts(a) + ' · quotazione ' + a.q + '</div></div></div>' + reachLine(a) +
+    return '<div class="pick"><div class="pickh">' + bib(a) + '<div><b>' + esc(a.n) + '</b> <span class="nat">' + esc(a.c) + '</span>' + injTag(a) + '<div class="small muted">' + GLAB[a.g] + ' · ' + dpts(a) + ' · quotazione ' + a.q + '</div>' + (a.note ? '<div class="note">' + esc(a.note) + '</div>' : '') + '</div></div>' + reachLine(a) +
       '<div class="stepper"><button type="button" class="mini" data-act="pstep" data-v="-1">−1</button><input id="aprice" class="in" type="number" inputmode="numeric" min="1" step="1" value="' + price + '" aria-label="Prezzo in crediti">' +
       '<button type="button" class="mini" data-act="pstep" data-v="1">+1</button><button type="button" class="mini" data-act="pstep" data-v="5">+5</button><button type="button" class="mini" data-act="pstep" data-v="10">+10</button></div>' +
       '<div class="acts"><button type="button" class="btn red" id="abuy" data-act="buy"' + (chk.ok ? '' : ' disabled') + '>Aggiudica a ' + esc(tname(tmp.at)) + '</button><button type="button" class="btn ghost" data-act="apickx">Annulla</button><span class="why" id="awhy">' + (chk.ok ? '' : esc(chk.why)) + '</span></div></div>';
@@ -828,7 +833,7 @@
     if (!q || q.trim().length < 2) return '<p class="hint">Scrivi almeno 2 lettere.</p>';
     var arr = S.athletes.filter(function (a) { return matchQ(a, q); }).slice(0, 8);
     if (!arr.length) return '<p class="hint">Nessun atleta trovato.</p>';
-    return arr.map(function (a) { return '<button type="button" class="hit" data-act="epick" data-v="' + a.id + '">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + ' · ' + a.g + '</span>' + (a.hide ? ' <span class="small muted">escluso</span>' : '') + '</span><span class="lq num"><small>Quot.</small>' + a.q + '</span></button>'; }).join('');
+    return arr.map(function (a) { return '<button type="button" class="hit" data-act="epick" data-v="' + a.id + '">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + ' · ' + a.g + '</span>' + (a.hide ? ' <span class="small muted">escluso</span>' : '') + injTag(a) + '</span><span class="lq num"><small>Quot.</small>' + a.q + '</span></button>'; }).join('');
   }
   function aAtleti() {
     var h = '<div class="stack"><label class="field" for="eq"><span>Cerca atleta</span><input id="eq" class="in" type="search" autocomplete="off" value="' + esc(tmp.eq) + '" placeholder="Nome o nazione"></label><div id="elist">' + athEditList() + '</div>';
@@ -837,7 +842,8 @@
       h += '<div class="pick"><div class="pickh">' + bib(a) + '<div><b>' + esc(a.n) + '</b> <span class="nat">' + esc(a.c) + '</span><div class="small muted">' + dpts(a) + '</div></div></div><div class="grid2">' +
         '<label class="field" for="xq"><span>Quotazione</span><input id="xq" class="in" type="number" min="1" value="' + a.q + '"></label>' +
         '<label class="field" for="xc"><span>Nazione</span><input id="xc" class="in" maxlength="3" value="' + esc(a.c) + '"></label></div>' +
-        '<label class="field" for="xn"><span>Nota</span><input id="xn" class="in" value="' + esc(a.note || '') + '"></label>' +
+        '<label class="field" for="xs"><span>Stato</span><select id="xs" class="in">' + INJOPT.map(function (o) { return '<option value="' + o[0] + '"' + ((a.inj || '') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+        '<label class="field" for="xn"><span>Nota</span><input id="xn" class="in" value="' + esc(a.note || '') + '" placeholder="es. Infortunio al ginocchio, rientro a gennaio"></label>' +
         '<label class="acts small" for="xh"><input id="xh" type="checkbox"' + (a.hide ? ' checked' : '') + '> Escludi dal listone</label>' +
         '<div class="acts"><button type="button" class="btn" data-act="asave">Aggiorna atleta</button></div></div>';
     }
@@ -1244,7 +1250,7 @@
       case 'asave':
         a = ath(tmp.ea); if (!a) break;
         var q = parseInt(val('xq'), 10);
-        if (doOp({ k: 'athSet', a: a.id, f: { q: q >= 1 ? q : a.q, c: val('xc').trim().toUpperCase() || a.c, note: val('xn').trim(), hide: !!(D.getElementById('xh') || {}).checked } })) { toast('Atleta aggiornato.'); render(); }
+        if (doOp({ k: 'athSet', a: a.id, f: { q: q >= 1 ? q : a.q, c: val('xc').trim().toUpperCase() || a.c, note: val('xn').trim(), inj: INJ[val('xs')] ? val('xs') : '', hide: !!(D.getElementById('xh') || {}).checked } })) { toast('Atleta aggiornato.'); render(); }
         break;
       case 'aadd':
         var nm = val('nan').trim();
