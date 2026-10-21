@@ -72,6 +72,14 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   ok(/^[A-Z0-9]{5,}$/.test(code), 'invite code ' + code);
   ok((await league()).teams.length === 7 && (await league()).name === 'Ski Team Paganella', 'seven teams in «Ski Team Paganella»');
   ok(/SKI TEAM PAGANELLA/i.test(await page.textContent('header')), 'league name in the header');
+  await click('[data-act="adm"][data-v="imp"]'); await wait(60);
+  await page.selectOption('#spg', '5'); await click('[data-act="impsave"]'); await wait(120);
+  ok((await league()).settings.perGender === 5, 'before the auction the organiser can set 5 men + 5 women');
+  await click('#tab-regole');
+  ok(/Ogni squadra ha 5 uomini e 5 donne/.test(await txt()), 'the rules follow: 5 + 5');
+  await click('#tab-gestione'); await click('[data-act="adm"][data-v="imp"]');
+  await page.selectOption('#spg', '6'); await click('[data-act="impsave"]'); await wait(120);
+  ok((await league()).settings.perGender === 6, 'and back to 6 + 6');
   await page.screenshot({ path: OUT + 'site_admin.png', fullPage: true });
 
   // 2. Nico: the username is unique; creating leagues locked; wrong code, right code, picks his team
@@ -132,6 +140,8 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   for (const n of ['Meillard', 'Kristoffersen']) { await page.fill('#aq', n); await click('#alist [data-act="apick"]'); await click('#abuy'); await wait(80); }
   L = await league();
   ok(L.purchases.length === 3 && L.purchases[0].price === 81, 'three athletes bought for Nico (' + L.purchases.length + ')');
+  await click('[data-act="adm"][data-v="imp"]'); await wait(60);
+  ok(!(await page.$('#spg')) && /Fissi per questa stagione: 6 uomini e 6 donne/.test(await txt()), 'athletes per team fixed once the auction has started');
 
   // 5. Nico sets the Sölden lineup before the deadline
   await logout(); await login('nico@example.it', 'nicopass');

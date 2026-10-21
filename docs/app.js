@@ -883,7 +883,11 @@
   }
   function aImp() {
     var L = S.league;
+    var pg = L.perGender || 6, open = !S.purchases.length;
     return '<div class="stack"><div class="grid2"><label class="field" for="sb"><span>Crediti per squadra</span><input id="sb" class="in" type="number" min="12" value="' + L.budget + '"></label>' +
+      (open ? '<label class="field" for="spg"><span>Atleti per squadra, per genere</span><select id="spg" class="in">' + [4, 5, 6, 7, 8].map(function (n) {
+        return '<option value="' + n + '"' + (n === pg ? ' selected' : '') + '>' + n + ' uomini + ' + n + ' donne</option>';
+      }).join('') + '</select></label>' : '') +
       '<label class="field" for="srf"><span>Rimborso allo svincolo (%)</span><input id="srf" class="in" type="number" min="0" max="100" value="' + L.refundPct + '"></label>' +
       '<label class="field" for="sn"><span>Nome della lega</span><input id="sn" class="in" value="' + esc(L.name) + '"></label>' +
       '<label class="field" for="ssc"><span>Scala dei punti</span><select id="ssc" class="in"><option value="fis"' + (L.scale !== 'lin' ? ' selected' : '') + '>Coppa del Mondo: 100, 80, 60…</option><option value="lin"' + (L.scale === 'lin' ? ' selected' : '') + '>Lineare: 30, 29, 28…</option></select></label>' +
@@ -905,7 +909,8 @@
         return '<label class="field" for="' + f[0] + '"><span>' + f[1] + '</span><input id="' + f[0] + '" class="in" type="number" min="0" max="200" step="' + f[3] + '" value="' + (f[2] || 0) + '"></label>';
       }).join('') + '</div><p class="hint gap">Tieni il malus per l\'uscita almeno pari agli altri: così arrivare non vale mai meno che uscire.</p></div>' +
       '<div class="acts"><button type="button" class="btn" data-act="impsave">Aggiorna impostazioni</button></div>' +
-      '<p class="hint">Fissi per questa stagione: ' + (L.perGender || 6) + ' uomini e ' + (L.perGender || 6) + ' donne per squadra, ' + (L.starters || 2) + ' titolari e 1 riserva per gara, formazione chiusa ' + lockText(L) + '.</p></div>';
+      '<p class="hint">' + (open ? 'Gli atleti per squadra si possono cambiare finché l\'asta non è iniziata. ' : 'Fissi per questa stagione: ' + pg + ' uomini e ' + pg + ' donne per squadra. ') +
+      'Sempre ' + (L.starters || 2) + ' titolari e 1 riserva per gara, formazione chiusa ' + lockText(L) + '.</p></div>';
   }
 
   // ---------- screens before the league: loading, sign in, joining a league
@@ -1243,12 +1248,12 @@
         if (doOp({ k: 'athAdd', ath: { id: nid, n: nm, c: val('nac').trim().toUpperCase(), g: gg, p: [0, 0, 0, 0], tp: 0, q: qq >= 1 ? qq : 1, note: 'Aggiunto in Gestione' } })) { toast(nm + ' aggiunto al listone.'); render(); }
         break;
       case 'impsave':
-        var b = parseInt(val('sb'), 10), rf = parseInt(val('srf'), 10);
+        var b = parseInt(val('sb'), 10), rf = parseInt(val('srf'), 10), npg = parseInt(val('spg'), 10);
         var bn = parseInt(val('sbn'), 10), bqv = parseInt(val('bq'), 10), bib = { mid: {}, late: {} };
         [5, 3, 1].forEach(function (k) { var x = parseInt(val('bm' + k), 10); if (x > 0) bib.mid[k] = x; });
         [30, 15, 5, 3, 1].forEach(function (k) { var x = parseInt(val('bl' + k), 10); if (x > 0) bib.late[k] = x; });
         function bval(id, cur) { var x = Math.round(parseFloat(String(val(id)).replace(',', '.')) * 10) / 10; return x >= 0 && x <= 200 ? x : (cur || 0); }
-        if (doOp({ k: 'set', f: { budget: b >= 12 ? b : S.league.budget, refundPct: rf >= 0 && rf <= 100 ? rf : S.league.refundPct, name: val('sn').trim() || S.league.name, scale: val('ssc') === 'lin' ? 'lin' : 'fis', bonus30: bn >= 0 && bn <= 100 ? bn : (S.league.bonus30 || 0), bib: bib, bibMaxQ: bqv >= 0 ? bqv : 0, run2Best: bval('r2b', S.league.run2Best), run2Gain: bval('r2g', S.league.run2Gain), streakPod: bval('skp', S.league.streakPod), streakWin: bval('skw', S.league.streakWin),
+        if (doOp({ k: 'set', f: { perGender: !S.purchases.length && npg >= 4 && npg <= 8 ? npg : (S.league.perGender || 6), budget: b >= 12 ? b : S.league.budget, refundPct: rf >= 0 && rf <= 100 ? rf : S.league.refundPct, name: val('sn').trim() || S.league.name, scale: val('ssc') === 'lin' ? 'lin' : 'fis', bonus30: bn >= 0 && bn <= 100 ? bn : (S.league.bonus30 || 0), bib: bib, bibMaxQ: bqv >= 0 ? bqv : 0, run2Best: bval('r2b', S.league.run2Best), run2Gain: bval('r2g', S.league.run2Gain), streakPod: bval('skp', S.league.streakPod), streakWin: bval('skw', S.league.streakWin),
           lockBefore: Math.min(600, Math.max(0, parseInt(val('slb'), 10) >= 0 ? parseInt(val('slb'), 10) : (S.league.lockBefore != null ? S.league.lockBefore : 60))),
           malusDnf: bval('mdf', S.league.malusDnf), malusTop: bval('mtp', S.league.malusTop), malusLead: bval('mld', S.league.malusLead), topGroup: Math.min(30, Math.max(1, parseInt(val('tgp'), 10) || S.league.topGroup || 7)) } })) { toast('Impostazioni aggiornate.'); render(); }
         break;
