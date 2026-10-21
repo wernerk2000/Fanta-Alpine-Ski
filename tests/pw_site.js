@@ -187,6 +187,12 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   t = await txt();
   ok(/Gare-evento ×1,5 — uomini: .*Kitzbühel \(discesa\)/.test(t) && /Cortina d'Ampezzo \(discesa del 15 gen\)/.test(t), 'rules list the event races from the calendar');
   ok(/riparte da 1, e chi ha rinunciato non può più offrire/.test(t) && /Coppa delle tecniche/.test(t) && /Coppa delle veloci/.test(t), 'rules: auction and prizes');
+  await click('#tab-listone'); await click('[data-act="lg"][data-v=""]'); await wait(60);
+  const ranks = await page.$$eval('#llist .lrow .an', els => els.slice(0, 4).map(e => e.textContent));
+  ok(ranks[0] === '1. Marco Odermatt' && ranks[3] === '4. Emma Aicher', 'listone: overall rank by quotation ' + JSON.stringify(ranks));
+  await click('[data-act="lg"][data-v="F"]'); await wait(60);
+  ok((await page.$$eval('#llist .lrow .an', els => els[2].textContent)) === '4. Emma Aicher', 'filtering women keeps the overall rank');
+  await click('[data-act="lg"][data-v=""]');
 
   // 8. who may create leagues; every league of the site
   await click('#tab-gestione'); await click('[data-act="adm"][data-v="leghe"]'); await wait(60);

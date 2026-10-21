@@ -39,3 +39,6 @@ button.pickrow:hover .tn { text-decoration: underline; text-underline-offset: 3p
 /* renaming one's own team */
 .renrow { margin-top: 10px; }
 .renbox { display: grid; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+
+/* Listone: overall rank by quotation */
+.rk { font-family: var(--f-mono); font-size: 12.5px; font-weight: 500; color: var(--ink3); }

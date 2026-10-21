@@ -460,8 +460,15 @@
   }
 
   // ---------- Listone
+  // overall ranking by quotation, men and women together; same quotation: more points last season first
+  function qRanks() {
+    var arr = S.athletes.filter(function (a) { return !a.hide; }).sort(function (a, b) { return b.q - a.q || b.tp - a.tp; });
+    var m = {}, pos = 0, prev = null;
+    arr.forEach(function (a, i) { var k = a.q + ':' + a.tp; if (k !== prev) pos = i + 1; m[a.id] = pos; prev = k; });
+    return m;
+  }
   function listRows() {
-    var di = ui.ld ? FS.DIDX[ui.ld] : -1;
+    var di = ui.ld ? FS.DIDX[ui.ld] : -1, QR = qRanks();
     var arr = S.athletes.filter(function (a) {
       if (a.hide) return false;
       if (ui.lg && a.g !== ui.lg) return false;
@@ -473,14 +480,14 @@
     var h = '<p class="small muted">' + arr.length + (arr.length === 1 ? ' atleta' : ' atleti') + '</p>';
     h += arr.map(function (a) {
       var o = FS.ownerNow(S, a.id), cur = C.ath[a.id];
-      return '<div class="lrow">' + bib(a) + '<span><span class="an">' + esc(a.n) + '</span> <span class="nat">' + esc(a.c) + '</span><span class="lmeta">' + (a.g === 'M' ? 'Uomo' : 'Donna') + ' · ' + esc(a.tpy || '25/26') + ': ' + dpts(a) +
+      return '<div class="lrow">' + bib(a) + '<span><span class="an"><span class="rk" title="Posizione nella classifica delle quotazioni">' + QR[a.id] + '.</span> ' + esc(a.n) + '</span> <span class="nat">' + esc(a.c) + '</span><span class="lmeta">' + (a.g === 'M' ? 'Uomo' : 'Donna') + ' · ' + esc(a.tpy || '25/26') + ': ' + dpts(a) +
         (cur ? ' · 26/27: <span class="num">' + cur + '</span> pt' : '') + '</span>' + (a.note ? '<span class="note">' + esc(a.note) + '</span>' : '') +
         (o ? '<span class="own">' + esc(tname(o.t)) + ' · ' + o.price + ' cr</span>' : '<span class="own free">Libero</span>') + '</span><span class="lq num"><small>Quot.</small>' + a.q + '</span></div>';
     }).join('');
     return h;
   }
   function vListone() {
-    var h = '<section class="sec"><div class="lbl">Listone</div><h1 class="h1">Atleti e quotazioni</h1><p class="sub">Quotazione = punti di Coppa 2025/26 in tutte le discipline diviso 20, minimo 1. È il prezzo di partenza all\'asta. La sigla colorata è la disciplina in cui l\'atleta ha fatto più punti.</p>';
+    var h = '<section class="sec"><div class="lbl">Listone</div><h1 class="h1">Atleti e quotazioni</h1><p class="sub">Quotazione = punti di Coppa 2025/26 in tutte le discipline diviso 20, minimo 1. È il prezzo di partenza all\'asta. Il numero davanti al nome è la posizione nella classifica delle quotazioni, uomini e donne insieme. La sigla colorata è la disciplina in cui l\'atleta ha fatto più punti.</p>';
     h += '<label class="field" for="lq"><span>Cerca</span><input id="lq" class="in" type="search" autocomplete="off" placeholder="Nome o nazione, es. ITA" value="' + esc(ui.lq) + '"></label>';
     h += '<div class="chips">' + chipset('lg', [['', 'Tutti'], ['M', 'Uomini'], ['F', 'Donne']], ui.lg) + '<button type="button" class="chip' + (ui.lfree ? ' on' : '') + '" data-act="lfree" aria-pressed="' + ui.lfree + '">Solo liberi</button></div>';
     h += '<div class="chips">' + chipset('ld', [['', 'Tutte le discipline'], ['DH', 'Discesa'], ['SG', 'SuperG'], ['GS', 'Gigante'], ['SL', 'Slalom']], ui.ld) + '</div>';
