@@ -196,7 +196,18 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   // injuries: badge and note in the listone; the administrator changes the status from Gestione → Atleti
   await page.fill('#lq', 'kilde'); await wait(80);
   t = await page.textContent('#llist');
-  ok(/Stagione finita/.test(t) && /tendine d.Achille/.test(t), 'listone: Kilde out for the season, with the note');
+  ok(/Infortunato/.test(t) && /[Tt]endine d.Achille/.test(t), 'listone: Kilde injured, with the note');
+  // athletes back from injury with no 2025/26 points join the listone with the points of their last full season
+  await page.fill('#lq', 'vlhov'); await wait(80);
+  t = await page.textContent('#llist');
+  ok(/Petra Vlhová/.test(t) && /23\/24: GS 297 · SL 505/.test(t) && /\b40\b/.test(t) && !(await page.$('#llist .injt')), 'listone: Vlhová added with 2023/24 points, quotation 40, fit');
+  await page.fill('#lq', 'sarrazin'); await wait(80);
+  t = await page.textContent('#llist');
+  ok(/Cyprien Sarrazin/.test(t) && /In dubbio/.test(t) && /Copper Mountain/.test(t), 'listone: Sarrazin added, in doubt for the first races');
+  await page.fill('#lq', 'steen olsen'); await wait(80);
+  ok(/Alexander Steen Olsen/.test(await page.textContent('#llist')), 'listone: Steen Olsen added');
+  await page.fill('#lq', ''); await wait(80);
+  await page.screenshot({ path: OUT + 'site_listone.png', fullPage: true, clip: { x: 0, y: 0, width: 390, height: 1700 } });
   await page.fill('#lq', 'odermatt'); await wait(80);
   ok(!(await page.$('#llist .injt')), 'listone: no badge for a fit athlete');
   await page.fill('#lq', '');

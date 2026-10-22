@@ -1,21 +1,33 @@
 {
-  "updated": "2026-10-21",
+  "updated": "2026-10-22",
   "retired": {
     "M": ["Romed Baumann"],
     "F": []
   },
+  "added": [
+    {"id": "m-alexander-steen-olsen", "n": "Alexander Steen Olsen", "c": "NOR", "g": "M", "p": [0, 0, 346, 97], "tpy": "24/25",
+     "note": "Punti del 2024/25: ha saltato tutto il 2025/26 per l'operazione al ginocchio, rientra a Sölden"},
+    {"id": "m-cyprien-sarrazin", "n": "Cyprien Sarrazin", "c": "FRA", "g": "M", "p": [510, 224, 0, 0], "tpy": "23/24", "inj": "doubt",
+     "note": "Punti del 2023/24. Fermo dalla grave caduta di Bormio (dicembre 2024): potrebbe rientrare a Copper Mountain (28 novembre), non ancora deciso"},
+    {"id": "f-petra-vlhova", "n": "Petra Vlhová", "c": "SVK", "g": "F", "p": [0, 0, 297, 505], "tpy": "23/24",
+     "note": "Punti del 2023/24, chiusa a gennaio per l'infortunio al ginocchio: dopo due stagioni ferma rientra a Sölden, solo gigante e slalom"},
+    {"id": "f-marta-bassino", "n": "Marta Bassino", "c": "ITA", "g": "F", "p": [71, 218, 69, 0], "tpy": "24/25",
+     "note": "Punti del 2024/25: ha saltato il 2025/26 per la frattura del piatto tibiale, rientra a Sölden"},
+    {"id": "f-andreja-slokar", "n": "Andreja Slokar", "c": "SLO", "g": "F", "p": [0, 0, 0, 260], "tpy": "24/25", "inj": "doubt",
+     "note": "Punti del 2024/25. Crociato rotto a novembre 2025: è tornata sugli sci a giugno, rientro in Coppa non ancora annunciato"}
+  ],
   "athletes": {
-    "Aleksander Aamodt Kilde": {"inj": "out", "note": "Rottura del tendine d'Achille in allenamento in Cile il 14 ottobre: salta la stagione"},
-    "Federica Brignone": {"inj": "long", "note": "Punti del 2024/25. Operata di nuovo ad agosto: salta Sölden e le gare in America, rientro incerto"},
-    "Valérie Grenier": {"inj": "long", "note": "Grave infortunio al ginocchio in allenamento a Sölden, operata il 23 ottobre: stagione a rischio"},
-    "Antoine Azzolin": {"inj": "long", "note": "Crociato e menisco del ginocchio destro a marzo: rientro incerto"},
-    "Sofia Goggia": {"inj": "doubt", "note": "Due infezioni virali in estate: punta a esserci a Beaver Creek (11-13 dicembre), la prima gara veloce"},
-    "Manuel Feller": {"inj": "short", "note": "Problemi alla schiena: entra in Coppa in ritardo, rientro non ancora fissato"},
-    "Nina Astner": {"inj": "short", "note": "Botta alla gamba destra in allenamento, niente di grave: salta Sölden"},
-    "Marcel Hirscher": {"inj": "short", "note": "Salta Sölden perché non è pronto: ritorno in gara non confermato"},
+    "Aleksander Aamodt Kilde": {"inj": "long", "note": "Tendine d'Achille rotto in allenamento in Cile il 14 ottobre: nessuna data di rientro, stagione a forte rischio"},
+    "Federica Brignone": {"inj": "long", "note": "Punti del 2024/25. Non scia da febbraio, operata di nuovo ad agosto: salta Sölden, nessuna data di rientro"},
+    "Valérie Grenier": {"inj": "long", "note": "Grave infortunio al ginocchio destro in allenamento a Sölden (17 ottobre), operazione il 23 ottobre: nessuna data di rientro, stagione a rischio"},
+    "Antoine Azzolin": {"inj": "doubt", "note": "Operato dopo una caduta a fine stagione: sta rientrando e si dà tre gare per decidere se continuare"},
+    "Sofia Goggia": {"inj": "short", "note": "Doppia infezione virale (chikungunya e parvovirus): salta Sölden, nessuna data di rientro (il 9 ottobre parlava di 10 giorni o un mese e mezzo)"},
+    "Manuel Feller": {"inj": "short", "note": "Nuova ernia del disco in estate: salta Sölden ed entra in Coppa in ritardo, rientro non ancora fissato"},
+    "Nina Astner": {"inj": "short", "note": "Caduta in allenamento, botta alla parte bassa della gamba destra: niente di grave, salta Sölden"},
+    "Marcel Hirscher": {"inj": "short", "note": "Dopo la rottura del crociato non è ancora pronto: salta Sölden, nessuna data per la prima gara"},
+    "Lauren Macuga": {"inj": "doubt", "note": "Punti del 2024/25. Crociato rotto a fine novembre 2025: è tornata sugli sci, data del rientro in gara non ancora annunciata"},
     "Mikaela Shiffrin": {"note": "Quest'anno farà meno slalom: salta Levi e Gurgl, il primo slalom è Killington; più gigante e superG"},
-    "Marco Schwarz": {"note": "Non corre più lo slalom: discesa, superG e gigante"},
-    "Lauren Macuga": {"note": "Punti del 2024/25: rientra quest'anno dopo la rottura del crociato"},
-    "Ricarda Haaser": {"note": "Rientra a Sölden dopo la frattura alla tibia di febbraio"}
+    "Marco Schwarz": {"note": "Lascia lo slalom: gigante, superG e qualche discesa (forse qualche slalom dopo i Mondiali)"},
+    "Ricarda Haaser": {"note": "Rientra a Sölden dopo la frattura del piatto tibiale sinistro (Soldeu, 28 febbraio)"}
   }
 }

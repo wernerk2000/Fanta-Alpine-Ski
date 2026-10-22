@@ -483,7 +483,7 @@
     return h;
   }
   function vListone() {
-    var h = '<section class="sec"><div class="lbl">Listone</div><h1 class="h1">Atleti e quotazioni</h1><p class="sub">Quotazione = punti di Coppa 2025/26 in tutte le discipline diviso 20, minimo 1. È il prezzo di partenza all\'asta. La sigla colorata è la disciplina in cui l\'atleta ha fatto più punti. Le etichette segnalano infortuni e assenze, con i dettagli sotto il nome.</p>';
+    var h = '<section class="sec"><div class="lbl">Listone</div><h1 class="h1">Atleti e quotazioni</h1><p class="sub">Quotazione = punti di Coppa 2025/26 in tutte le discipline diviso 20, minimo 1 (per chi rientra da un infortunio, i punti della sua ultima stagione intera, indicata nella riga). È il prezzo di partenza all\'asta. La sigla colorata è la disciplina in cui l\'atleta ha fatto più punti. Le etichette segnalano infortuni e assenze, con i dettagli sotto il nome.</p>';
     h += '<label class="field" for="lq"><span>Cerca</span><input id="lq" class="in" type="search" autocomplete="off" placeholder="Nome o nazione, es. ITA" value="' + esc(ui.lq) + '"></label>';
     h += '<div class="chips">' + chipset('lg', [['', 'Tutti'], ['M', 'Uomini'], ['F', 'Donne']], ui.lg) + '<button type="button" class="chip' + (ui.lfree ? ' on' : '') + '" data-act="lfree" aria-pressed="' + ui.lfree + '">Solo liberi</button></div>';
     h += '<div class="chips">' + chipset('ld', [['', 'Tutte le discipline'], ['DH', 'Discesa'], ['SG', 'SuperG'], ['GS', 'Gigante'], ['SL', 'Slalom']], ui.ld) + '</div>';
@@ -571,7 +571,7 @@
       block('Rosa', ['Ogni squadra ha ' + per + ' uomini e ' + per + ' donne, senza vincoli di disciplina: puoi prendere solo slalomisti o solo discesisti.']) +
       block('Asta', ['Ogni squadra ha ' + L.budget + ' crediti e ogni atleta può stare in una sola squadra.',
         'Offerta massima = crediti residui − posti vuoti + 1, così nessuno resta con la rosa incompleta.',
-        'La quotazione del listone è il prezzo di partenza: punti di Coppa 2025/26 diviso 20, minimo 1.',
+        'La quotazione del listone è il prezzo di partenza: punti di Coppa 2025/26 diviso 20, minimo 1 (per chi rientra da un infortunio, quelli della sua ultima stagione intera).',
         'Se nessuna squadra può arrivare alla quotazione, o chi può arrivarci rinuncia, l\'atleta riparte da 1, e chi ha rinunciato non può più offrire per lui.']) +
       block('Formazione', ['Per ogni gara scegli ' + st + ' titolari e 1 riserva tra i tuoi ' + per + ' atleti di quel genere.',
         'La formazione si chiude ' + lockText(L) + ': l\'ora esatta è scritta accanto a ogni gara. Prima della chiusura vedi solo la tua formazione; dopo, tutti vedono tutte.',

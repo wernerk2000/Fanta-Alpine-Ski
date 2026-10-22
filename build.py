@@ -54,8 +54,15 @@ athletes.append(make('F', 'USA', 'Lauren Macuga', 230, 279, 16, 0,
                      'Punti del 2024/25: ferma nel 2025/26 per la rottura del crociato', tpy='24/25'))
 athletes.append(make('M', 'NED', 'Marcel Hirscher', 0, 0, 0, 0, 'Possibile rientro con wild card'))
 
-# injuries, notes and late retirements (data/status.json, also applied to the live page by patch_status.py)
+# injuries, notes, late retirements and athletes back from injury who scored nothing in 2025/26
+# (data/status.json, also applied to the live page and to the site's athletes.json by patch_status.py)
 STATUS = json.loads((ROOT / 'data' / 'status.json').read_text(encoding='utf-8'))
+for x in STATUS.get('added', []):
+    a = make(x['g'], x['c'], x['n'], *x['p'], x.get('note'), tpy=x.get('tpy'))
+    assert a['id'] == x['id'], (a['id'], x['id'])
+    if x.get('inj'):
+        a['inj'] = x['inj']
+    athletes.append(a)
 for a in list(athletes):
     if a['n'] in STATUS['retired'].get(a['g'], []):
         athletes.remove(a)
