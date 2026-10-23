@@ -47,6 +47,8 @@ fb = SITE / 'firebase.json'
 cfg = json.loads(fb.read_text(encoding='utf-8')) if fb.exists() else {}
 put('config.js', 'window.FS_CONFIG = ' + json.dumps({'firebase': cfg}, ensure_ascii=False) + ';\n')
 put('firestore.rules', (SITE / 'firestore.rules').read_text(encoding='utf-8'))
+# the same rules as plain text: browsers show it instead of downloading it (the organiser copies it from there)
+put('firestore-rules.txt', (SITE / 'firestore.rules').read_text(encoding='utf-8'))
 put('.nojekyll', '')
 cname = SITE / 'CNAME'
 if cname.exists():

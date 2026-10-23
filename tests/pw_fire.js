@@ -407,6 +407,12 @@ async function flowC(browser) {
   await H.logout(); await H.login('werner@example.it', 'segreta1'); await H.wait(400);
   ok(await page.$('#rulesold') && /Le regole del database sono vecchie/.test(await page.textContent('#rulesold')), 'Werner: warned that the published rules are old');
   await shot('c_rules_admin');
+  // (the test site is not https, so the clipboard is a stand-in that keeps what the page writes)
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: t => { window.__clip = t; return Promise.resolve(); } } }));
+  await H.wait(200);
+  await H.click('#rulesold [data-act="rulescopy"]'); await H.wait(200);
+  const copied = await page.evaluate(() => window.__clip || '');
+  ok(/match \/config\/rules20261023/.test(copied) && /allow delete: if ladmin\(lid\);/.test(copied) && /Regole copiate/.test(await page.textContent('#fs-toast')), 'the button copies the new rules');
   await H.click('#tab-gestione'); await H.wait(100);
   ok(await page.$('#rulesold'), 'the warning in Gestione too');
   await page.evaluate(() => { window.__fake.oldRules = false; window.__fake.extraDeny = null; });

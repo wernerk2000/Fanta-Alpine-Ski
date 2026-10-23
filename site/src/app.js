@@ -284,13 +284,13 @@
     // the text is fetched now, so the button can copy it at once (Safari copies only during the tap)
     if (!tmp.rulesGet) {
       tmp.rulesGet = true;
-      fetch('firestore.rules', { cache: 'no-store' }).then(function (x) { return x.ok ? x.text() : ''; }).then(function (s) { tmp.rulesTxt = s; }, function () { tmp.rulesGet = false; });
+      fetch('firestore-rules.txt', { cache: 'no-store' }).then(function (x) { return x.ok ? x.text() : ''; }).then(function (s) { tmp.rulesTxt = s; }, function () { tmp.rulesGet = false; });
     }
     return '<div class="alert bad" role="alert" id="rulesold">' + para('<b>Le regole del database sono vecchie.</b> Con queste il database può rifiutare le formazioni dei giocatori e altre modifiche.') +
       '<p class="small">In Firebase apri Firestore Database → Regole, cancella tutto, incolla le regole nuove e premi Pubblica. Poi ricarica questa pagina.</p>' +
       '<div class="acts"><button type="button" class="btn red" data-act="rulescopy">Copia le regole nuove</button>' +
       '<a class="mini" href="https://console.firebase.google.com/project/' + esc(((window.FS_CONFIG || {}).firebase || {}).projectId || '') + '/firestore" target="_blank" rel="noopener">Apri Firebase</a>' +
-      '<a class="mini" href="firestore.rules" target="_blank" rel="noopener">Vedi le regole</a></div></div>';
+      '<a class="mini" href="firestore-rules.txt" target="_blank" rel="noopener">Vedi le regole</a></div></div>';
   }
   // for the organiser: people without a team, teams nobody plays, teams of someone who left (full: the whole picture)
   function linksNote(full) {
