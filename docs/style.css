@@ -288,6 +288,7 @@ button.pickrow:hover .tn { text-decoration: underline; text-underline-offset: 3p
 .alert.bad { border-left-color: var(--tech); }
 .alert p { margin: 0; max-width: 62ch; }
 .alert .acts { margin-top: 2px; }
+.alert + .alert { margin-top: 10px; }
 
 /* the next lineup to set, on top of the home page */
 .nextlu { display: grid; gap: 8px; border: 1.5px solid var(--ink); }
