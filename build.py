@@ -174,7 +174,7 @@ league = {
                'bib': {'mid': {'5': 15, '3': 25, '1': 40}, 'late': {'30': 10, '15': 20, '5': 35, '3': 50, '1': 75}},
                'bibMid': 15, 'bibMidSpeed': 20, 'bibLate': 30, 'bibMaxQ': 0,
                'run2Best': 10, 'run2Gain': 1, 'streakPod': 10, 'streakWin': 20,
-               'malusDnf': 10, 'malusTop': 10, 'malusLead': 10, 'topGroup': 7, 'lockBefore': 60},
+               'malusDnf': 10, 'malusDnfLate': 5, 'malusTop': 10, 'malusLead': 10, 'topGroup': 7, 'lockBefore': 60},
     'teams': [{'id': 't%d' % i, 'name': 'Squadra %d' % i, 'owner': ''} for i in range(1, 9)],
     'purchases': [],
     'lineups': {},

@@ -442,9 +442,32 @@ async function flowC(browser) {
   ok(/Squadra 1: formazione per GS Sölden salvata/.test(await page.textContent('#fs-toast')), 'saved, for Squadra 1');
   await H.click('#tab-squadre'); await H.click('[data-act="tsel"][data-v="' + T2 + '"]'); await H.wait(100);
   ok(/Gare chiuse/.test(await H.txt()) && await page.$('[data-act="luopen"][data-v="f01|' + T2 + '"]'), 'Squadre: the closed races to correct, for the organiser');
+  // results with someone out: the bib decides the malus (−10 up to bib 30, −5 from 31)
+  await page.clock.setFixedTime(new Date('2026-10-24T14:00:00Z'));
+  await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="ris"]'); await H.wait(100);
+  await page.selectOption('#rsel', 'f01');
+  await page.fill('#rpaste', `1 3 6535455 HECTOR Sara 1992 SWE 1:05.00 1:06.00 2:11.00
+2 5 6535774 SCHEIB Julia 1998 AUT 1:05.20 1:06.10 2:11.30
+3 9 6535237 RAST Camille 1999 SUI 1:05.40 1:06.20 2:11.60
+Did not finish 1st run
+33 425929 ROBINSON Alice 2001 NZL
+7 6536100 MOLTZAN Paula 1994 USA`);
+  await H.click('[data-act="parse"]'); await H.wait(100);
+  ok(/pett\./.test(await H.txt()) && await page.inputValue('#pn-f-alice-robinson') === '33', 'preview: Robinson out, bib 33 read from the paste');
+  await H.click('[data-act="psave"]'); await H.wait(400);
+  const res = JSON.parse((await H.docs())['results/f01'].json);
+  ok(res.dnf.some(x => Array.isArray(x) && x[0] === 'f-alice-robinson' && x[1] === 33) && res.dnf.some(x => Array.isArray(x) && x[0] === 'f-paula-moltzan' && x[1] === 7), 'results keep the bib of who went out');
+  await H.click('#tab-gare'); await H.wait(100);
+  if (!(await page.$('.rdet'))) { await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150); }
+  const rd = await page.textContent('.rdet');
+  ok(/Robinson · uscito · −5/.test(rd), 'Robinson out with bib 33: −5 (' + (rd.match(/Robinson[^R]{0,30}/) || [''])[0] + ')');
+  await H.click('#tab-regole'); await H.wait(60);
+  ok(/−10 se l'atleta non arriva al traguardo.*; −5 se partiva con il pettorale dal 31 in su/.test(await H.txt()), 'rules: −10, or −5 from bib 31');
+  await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="imp"]'); await H.wait(60);
+  ok(await page.inputValue('#mdf') === '10' && await page.inputValue('#mdl') === '5', 'Impostazioni: −10 up to bib 30, −5 from 31');
   await H.logout(); await H.login('anna@example.it', 'annapass'); await H.wait(300);
   await H.click('#tab-gare'); await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150);
-  ok(/Rast, Scheib/.test(await page.textContent('.rdet')) && !(await page.$('.rdet [data-act="luopen"]')), 'Anna sees the corrected lineup, and cannot change any');
+  ok(/Scheib · 2°/.test(await page.textContent('.rdet')) && /Rast · 3°/.test(await page.textContent('.rdet')) && !(await page.$('.rdet [data-act="luopen"]')), 'Anna sees her corrected lineup scoring (Scheib 2nd, Rast 3rd), and cannot change any');
   ok(!page.errors.length, 'no page errors ' + JSON.stringify(page.errors));
   await page.context().close();
 }

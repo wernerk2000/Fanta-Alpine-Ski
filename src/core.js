@@ -102,6 +102,13 @@ var FS = (function () {
     if (CAT[race.t] === 'V') return bib <= 19 && bib % 2 === 1;
     return bib <= ((L && L.topGroup) || 7);
   }
+  // malus for not finishing: the full one for bibs up to bibLate (30), a lighter one from bib 31 on
+  // (default 5, never more than the full one); an unknown bib (0) takes the full one
+  function dnfMalus(bib, L) {
+    var full = (L && L.malusDnf) || 0;
+    if (!(bib > ((L && L.bibLate) || 30))) return full;
+    return L.malusDnfLate != null ? L.malusDnfLate : Math.min(5, full);
+  }
   // full fanta score of one athlete in one race, multiplier included.
   // Bonuses need a finish in the points. Maluses: not finishing (and then nothing else), a first-group athlete
   // outside the top 15, the run-1 leader outside the top 5; only the heavier of the last two counts.
@@ -109,7 +116,7 @@ var FS = (function () {
     var m = mult || 1, o = { base: 0, bBib: 0, bGain: 0, bBest: 0, bSer: 0, serK: null, serN: 0, bonus: 0, mDnf: 0, mTop: 0, mLead: 0, malus: 0, v: 0 };
     L = L || {};
     if (e.st === 'dnf') {
-      o.mDnf = r1(-(L.malusDnf || 0) * m);
+      o.mDnf = r1(-dnfMalus(e.bib, L) * m);
       o.malus = o.v = o.mDnf;
       return o;
     }
@@ -352,20 +359,21 @@ var FS = (function () {
         var e = entry(x);
         P[e.a] = { e: e, s: scoreOf(e, r, L, A[e.a] ? A[e.a].q : 0, { p: np[e.a] || 0, w: nw[e.a] || 0 }, mult) };
       });
-      var dnf = {}, ncb = {};
+      var dnf = {}, ncb = {}, dnfb = {};
       (R.dns || []).forEach(function (a) { dns[a] = 1; });
-      (R.dnf || []).forEach(function (a) { if (!P[a]) dnf[a] = 1; });
+      // out of the race: athlete id, or [athlete id, bib] (the bib sets the malus)
+      (R.dnf || []).forEach(function (x) { var a = Array.isArray(x) ? x[0] : x; if (!P[a]) { dnf[a] = 1; dnfb[a] = Array.isArray(x) ? +x[1] || 0 : 0; } });
       (R.nc || []).forEach(function (x) { ncb[x[0]] = x[1] || 0; });
       // results that list every athlete of the race (all: true): whoever is missing did not start
       if (R.all) Object.keys(A).forEach(function (a) { if (A[a].g === r.g && !P[a] && !dnf[a] && !(a in ncb)) dns[a] = 1; });
       // athletes without a place: out of the race (malus), or classified outside the list / not qualified (malus if first group)
       var X = {};
-      Object.keys(dnf).forEach(function (a) { X[a] = { st: 'dnf', bib: 0, s: scoreOf({ rank: 0, bib: 0, r1: 0, r2: 0, st: 'dnf' }, r, L, 0, null, mult) }; });
+      Object.keys(dnf).forEach(function (a) { X[a] = { st: 'dnf', bib: dnfb[a], s: scoreOf({ rank: 0, bib: dnfb[a], r1: 0, r2: 0, st: 'dnf' }, r, L, 0, null, mult) }; });
       Object.keys(ncb).forEach(function (a) { if (!P[a] && !X[a]) X[a] = { st: 'nc', bib: ncb[a], s: scoreOf({ rank: 0, bib: ncb[a], r1: 0, r2: 0 }, r, L, 0, null, mult) }; });
       function item(a, role, on) {
         var p = P[a], s = null;
         if (on) s = p ? p.s : X[a] ? X[a].s : scoreOf({ rank: 0, bib: 0, r1: 0, r2: 0 }, r, L, 0, null, mult);
-        return { a: a, role: role, rank: rank[a] || null, bib: bibs[a] || ncb[a] || null, r1: p ? p.e.r1 || null : null, r2: p ? p.e.r2 || null : null, s: s,
+        return { a: a, role: role, rank: rank[a] || null, bib: bibs[a] || ncb[a] || dnfb[a] || null, r1: p ? p.e.r1 || null : null, r2: p ? p.e.r2 || null : null, s: s,
           bonus: s ? s.bonus : 0, malus: s ? s.malus : 0, dnf: !!dnf[a], dns: !!dns[a], v: s ? s.v : 0, counted: on };
       }
       S.teams.forEach(function (t) {
@@ -531,7 +539,7 @@ var FS = (function () {
   return {
     PTS: PTS, CAT: CAT, DIDX: DIDX, GENDERS: GENDERS, clone: clone, rid: rid, r1: r1, romeTime: romeTime, weekKey: weekKey, lockOf: lockOf, startOf: startOf,
     giornate: giornate, cupPts: cupPts, scalePts: scalePts, fantaPts: fantaPts, bibBonus: bibBonus, bibGroup: bibGroup, TIERS: TIERS,
-    entry: entry, pack: pack, runBonus: runBonus, streakBonus: streakBonus, scoreOf: scoreOf, firstGroup: firstGroup, secs: secs, findBy: findBy, credits: credits, teamState: teamState, ownerNow: ownerNow, rosterAt: rosterAt,
+    entry: entry, pack: pack, runBonus: runBonus, dnfMalus: dnfMalus, streakBonus: streakBonus, scoreOf: scoreOf, firstGroup: firstGroup, secs: secs, findBy: findBy, credits: credits, teamState: teamState, ownerNow: ownerNow, rosterAt: rosterAt,
     canBuy: canBuy, checkLineup: checkLineup, apply: apply, applyAll: applyAll, applyOp: applyOp, migrate: migrate, view: view, LEAGUE_OPS: LEAGUE_OPS, compute: compute, norm: norm, words: words, parseResults: parseResults
   };
 })();
