@@ -176,6 +176,8 @@ var FS = (function () {
     return out;
   }
 
+  // a lineup may use the athletes the team has when the race closes: the same roster the scores use,
+  // also when the organiser corrects a race that is already closed
   function checkLineup(S, r, tid, lu) {
     if (!lu) return true;
     var starters = S.league.starters || 2;
@@ -183,7 +185,7 @@ var FS = (function () {
     if (t.length > starters) return false;
     var all = t.concat(res ? [res] : []);
     if (new Set(all).size !== all.length) return false;
-    var ro = rosterAt(S, tid, r.g, Date.now());
+    var ro = rosterAt(S, tid, r.g, lockOf(S, r));
     return all.every(function (a) { return ro.indexOf(a) >= 0; });
   }
 

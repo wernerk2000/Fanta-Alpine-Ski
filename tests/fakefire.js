@@ -3,14 +3,17 @@
 // Served in place of https://www.gstatic.com/firebasejs/10.12.2/firebase-{app,auth,firestore}.js.
 const SK = 'fakefire-v1';
 
-export class Timestamp {
+// one class for the three copies of this file (app, auth, firestore): the stored documents, rebuilt from sessionStorage
+// after a page load by whichever copy runs first, must still be timestamps for the firestore copy's rules
+window.__fakeTimestamp = window.__fakeTimestamp || class Timestamp {
   constructor(ms) { this._ms = ms; }
-  static fromMillis(ms) { return new Timestamp(ms); }
-  static now() { return new Timestamp(Date.now()); }
+  static fromMillis(ms) { return new window.__fakeTimestamp(ms); }
+  static now() { return new window.__fakeTimestamp(Date.now()); }
   toMillis() { return this._ms; }
   toDate() { return new Date(this._ms); }
-  isEqual(o) { return o instanceof Timestamp && o._ms === this._ms; }
-}
+  isEqual(o) { return o instanceof window.__fakeTimestamp && o._ms === this._ms; }
+};
+export const Timestamp = window.__fakeTimestamp;
 class Sentinel { constructor(s, v) { this.s = s; this.v = v; } }
 const SENT = { st: new Sentinel('st'), del: new Sentinel('del') };
 export function serverTimestamp() { return SENT.st; }
@@ -88,6 +91,8 @@ function childrenOf(col) { return Object.keys(F.docs).filter(p => parentOf(p) ==
 // ---------- rules: a port of site/firestore.rules
 function rules(method, path, ctx) {
   const me = ctx.uid, signedIn = !!me, seg = path.split('/');
+  // tests can stand in for older published rules: F.oldRules (no version document) and F.extraDeny(method, path, ctx)
+  if (F.extraDeny && F.extraDeny(method, path, ctx)) return false;
   const T = (f) => { try { return !!f(); } catch (e) { return false; } };
   const pre = p => (p in ctx.pre ? ctx.pre[p] : null), post = p => (p in ctx.post ? ctx.post[p] : null);
   const gadmin = () => signedIn && !!pre('config/admins') && (pre('config/admins').uids || []).indexOf(me) >= 0;
@@ -112,6 +117,7 @@ function rules(method, path, ctx) {
     if (read) return signedIn;
     return T(gadmin);
   }
+  if (seg[0] === 'config' && seg[1] === 'rules20261023' && seg.length === 2) return method === 'get' && signedIn && !F.oldRules;
   if (seg[0] === 'users' && seg.length === 2) {
     if (!(signedIn && seg[1] === me)) return false;
     if (read) return true;
@@ -149,7 +155,7 @@ function rules(method, path, ctx) {
       if (method === 'update') return T(() => ladmin(lid))
         || (uid === me && only(diff(), ['name']) && T(() => nd.name === myName()))
         || (uid === me && od.team === null && only(diff(), ['team']) && T(() => post('leagues/' + lid + '/teams/' + nd.team).uid === me));
-      if (method === 'delete') return T(() => ladmin(lid)) || uid === me;
+      if (method === 'delete') return T(() => ladmin(lid));
     }
     if (seg[2] === 'teams' && seg.length === 4) {
       const tid = seg[3];
@@ -157,6 +163,7 @@ function rules(method, path, ctx) {
       if (method === 'create' || method === 'delete') return T(() => ladmin(lid));
       if (method === 'update') return T(() => ladmin(lid))
         || (member(lid) && od.uid == null && nd.uid === me && only(diff(), ['uid', 'owner'])
+          && T(() => (leagueDoc(lid).settings || {}).lockTeams !== true)
           && T(() => pre('leagues/' + lid + '/members/' + me).team == null) && T(() => post('leagues/' + lid + '/members/' + me).team === tid))
         || (member(lid) && od.uid === me && only(diff(), ['name']) && typeof nd.name === 'string' && nd.name.trim().length > 0 && nd.name.length <= 30);
     }

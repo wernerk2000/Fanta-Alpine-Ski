@@ -39,6 +39,8 @@ function makeCode() {
 function ms(v) { return v && typeof v.toMillis === 'function' ? v.toMillis() : (typeof v === 'number' ? v : 0); }
 function luOf(v) { return { t: (v && v.t) || [], r: (v && v.r) || null }; }
 const ARCHIVE_AFTER = 5 * 60000;   // the administrator copies a race's lineups this long after its deadline
+// the published rules allow reading this document (it need not exist); older rules refuse it, and the page tells the organiser
+const RULES_DOC = 'rules20261023';
 
 if (!CFG || !CFG.apiKey) {
   window.DB = { missingConfig: true, start(cb) { cb({ phase: 'noconfig' }); } };
@@ -51,7 +53,7 @@ if (!CFG || !CFG.apiKey) {
 
   // ---------- state handed to the page
   const st = {
-    phase: 'loading', user: null, profileReady: false, gadmin: false, adminsExist: true, site: { openLeagues: false }, error: null,
+    phase: 'loading', user: null, profileReady: false, gadmin: false, adminsExist: true, site: { openLeagues: false }, error: null, rules: null,
     base: { athletes: [], races: [], results: {}, excluded: [] }, baseReady: false,
     ovr: { athletes: {}, races: {}, results: {} },
     myLids: [], leagueDocs: {}, open: null, data: {}
@@ -94,11 +96,13 @@ if (!CFG || !CFG.apiKey) {
   function leagueEntry(lid) {
     const d = st.leagueDocs[lid];
     if (!d) return null;
-    const x = st.data[lid], ready = !!(x && x.ready);
+    const x = st.data[lid], ready = !!(x && x.ready), locks = d.locks || {}, dbLocks = {};
+    // the deadlines the database enforces, to explain a refused lineup
+    Object.keys(locks).forEach(r => { dbLocks[r] = ms(locks[r]); });
     return {
       id: lid, admin: d.admin, code: d.code, league: Object.assign({}, d.settings || {}, { name: d.name }),
       teams: ready ? x.teams : [], purchases: ready ? marketOf(d) : [], lineups: ready ? lineupsOf(lid) : {}, members: ready ? x.members : [],
-      loaded: ready
+      dbLocks: dbLocks, loaded: ready
     };
   }
   function snapshot() {
@@ -107,7 +111,7 @@ if (!CFG || !CFG.apiKey) {
     const g = merged();
     return {
       phase: st.baseReady ? 'ready' : 'loading', user: st.user, needName: !st.user.name, gadmin: st.gadmin, adminsExist: st.adminsExist,
-      site: st.site, canCreate: st.gadmin || !!st.site.openLeagues, error: st.error,
+      site: st.site, canCreate: st.gadmin || !!st.site.openLeagues, error: st.error, rulesOld: st.rules === 'old',
       leagues: st.myLids.map(leagueEntry).filter(Boolean), openId: st.open,
       athletes: g.athletes, races: g.races, results: g.results, excluded: g.excluded
     };
@@ -244,9 +248,21 @@ if (!CFG || !CFG.apiKey) {
     })().then(() => { archBusy = false; }, () => { archBusy = false; });
   }
 
+  // once per sign-in, for whoever organises a league: are the rules published in Firebase the current ones?
+  // (with old rules some saves are refused, lineups included; only the organiser can update them)
+  function checkRules() {
+    if (st.rules || !st.user || !st.profileReady) return;
+    const uid = st.user.uid;
+    if (!st.gadmin && !st.myLids.some(lid => (st.leagueDocs[lid] || {}).admin === uid)) return;
+    st.rules = 'checking';
+    getDoc(doc(db, 'config', RULES_DOC)).then(() => { st.rules = 'ok'; },
+      e => { st.rules = e && e.code === 'permission-denied' ? 'old' : 'unknown'; if (st.rules === 'old') emit(); });
+  }
+
   // after every change: deadlines, copies of closed races, lineups to read
   function afterChange() {
     syncLocks();
+    checkRules();
     const lid = st.open, x = lid && st.data[lid], d = lid && st.leagueDocs[lid];
     if (!x || !x.ready || !d || !st.baseReady || !st.user) return;
     const uid = st.user.uid, admin = d.admin === uid || st.gadmin;
@@ -273,7 +289,7 @@ if (!CFG || !CFG.apiKey) {
       subs.forEach(u => u()); subs = [];
       Object.keys(leagueSubs).forEach(k => leagueSubs[k]()); leagueSubs = {};
       closeOpen();
-      st.open = null; st.data = {}; st.leagueDocs = {}; st.myLids = []; st.error = null;
+      st.open = null; st.data = {}; st.leagueDocs = {}; st.myLids = []; st.error = null; st.rules = null;
       st.profileReady = false; st.gadmin = false; st.adminsExist = true; st.site = { openLeagues: false };
       if (!user) { st.user = null; st.phase = 'signedout'; emit(); return; }
       // the username comes from users/{uid}; until it is chosen the page asks for it
@@ -469,11 +485,13 @@ if (!CFG || !CFG.apiKey) {
         } else b.update(L('teams', o.t), { uid: null, owner: '' });
         return b.commit();
       }
+      // a team's lineup for a race: the player before the deadline, the organiser at any time (a closed race too:
+      // then its copy in the league document changes as well, and so do the scores)
       case 'lu': {
         const t = x && x.teams.find(tt => tt.id === o.t), v = luOf(o.lu), b = writeBatch(db);
         b.set(L('races', o.r, 'lineups', o.t), Object.assign({ uid: (t && t.uid) || uid, at: serverTimestamp() }, v));
         b.set(L('pending', o.t), { [o.r]: v }, { merge: true });
-        if (d.admin === uid && (d.archive || {})[o.r]) b.update(LD(), { ['archive.' + o.r + '.' + o.t]: v });
+        if ((d.admin === uid || st.gadmin) && (d.archive || {})[o.r]) b.update(LD(), { ['archive.' + o.r + '.' + o.t]: v });
         await b.commit();
         if (x && x.lineups[o.r]) { x.lineups[o.r][o.t] = v; emit(); }
         return;

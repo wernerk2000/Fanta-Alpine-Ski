@@ -51,7 +51,8 @@
     return {
       id: lid, admin: L.admin, code: L.code, league: Object.assign({}, clone(L.settings), { name: L.name }),
       teams: full ? clone(L.teams) : [], purchases: full ? clone(L.purchases) : [], lineups: full ? visibleLineups(lid) : {},
-      members: full ? Object.keys(L.members).map(function (u) { return Object.assign({ uid: u }, L.members[u]); }) : [], loaded: full
+      members: full ? Object.keys(L.members).map(function (u) { return Object.assign({ uid: u }, L.members[u]); }) : [],
+      dbLocks: clone(L.locks || {}), loaded: full
     };
   }
   function snapshot() {
@@ -59,7 +60,7 @@
     var g = merged(), u = M.users[me];
     return {
       phase: 'ready', user: { uid: me, email: u.email, name: u.name || null }, needName: !u.name, gadmin: gadminNow(), adminsExist: !!M.admins,
-      site: clone(M.site), canCreate: gadminNow() || !!M.site.openLeagues,
+      site: clone(M.site), canCreate: gadminNow() || !!M.site.openLeagues, rulesOld: !!(W.rulesOld && me && (gadminNow() || Object.keys(M.leagues).some(function (l) { return M.leagues[l].admin === me; }))),
       leagues: (u.leagues || []).map(entry).filter(Boolean), openId: openId, athletes: g.athletes, races: g.races, results: g.results, excluded: g.excluded
     };
   }
@@ -168,7 +169,7 @@
   function claimTeam(lid, tid) {
     var L = M.leagues[lid], t = FS.findBy(L.teams, tid), m = L.members[me];
     if (!t || !m) return err('permission-denied');
-    if (!isAdmin(lid) && (t.uid || m.team)) return err('permission-denied');
+    if (!isAdmin(lid) && (t.uid || m.team || (L.settings && L.settings.lockTeams))) return err('permission-denied');
     t.uid = me; t.owner = M.users[me].name; m.team = tid;
     return done();
   }

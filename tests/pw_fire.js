@@ -142,7 +142,7 @@ async function flowA(browser) {
   await H.logout();
   await H.login('nico@example.it', 'nicopass');
   await H.click('#tab-squadre'); await H.wait(150);
-  await H.click('[data-act="luopen"][data-v="m01"]');
+  await H.click('[data-act="luopen"][data-v^="m01|"]');
   await H.click('[data-act="lusel"][data-v="m-marco-odermatt|R"]');
   await H.click('[data-act="lusel"][data-v="m-loic-meillard|T"]');
   await H.click('[data-act="lusel"][data-v="m-henrik-kristoffersen|T"]');
@@ -160,7 +160,7 @@ async function flowA(browser) {
 
   await page.clock.setFixedTime(new Date('2026-10-25T08:30:00Z'));
   await H.click('#tab-classifica'); await H.click('#tab-squadre'); await H.wait(150);
-  ok(!(await page.$('[data-act="luopen"][data-v="m01"]')), 'no editing after the deadline');
+  ok(!(await page.$('[data-act="luopen"][data-v^="m01|"]')), 'no editing after the deadline');
   const late = await page.evaluate(([l, t]) => window.DB.op({ k: 'lu', lg: l, r: 'm01', t: t, lu: { t: ['m-marco-odermatt'], r: null } }).then(() => 'saved', e => e.code), [lid, nicoTeam]);
   ok(late === 'permission-denied', 'rules: a late lineup is refused');
 
@@ -291,9 +291,161 @@ async function flowB(browser) {
   await page.context().close();
 }
 
+// Flow C: the auction is closed and the teams are full. Each player sets only their own lineup; a player without a team
+// is told why and what to do; the organiser sees who is not linked, links them, locks the free teams, is warned when the
+// published rules are old, and corrects any lineup, also after the deadline.
+const SHOTS = '/tmp/claude-0/-home-claude/6a1fd610-285d-5ec3-81bb-63f0103a1bd0/scratchpad/';
+async function flowC(browser) {
+  console.log('--- C: auction closed, players and organiser');
+  const page = await newPage(browser), H = helpers(page);
+  const shot = n => page.screenshot({ path: SHOTS + n + '.png', fullPage: true });
+  await page.clock.setFixedTime(new Date('2026-10-23T18:00:00Z'));
+  await page.goto('http://site.test/', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('form[data-form="login"]');
+  await H.register('Werner', 'werner@example.it', 'segreta1');
+  await H.click('[data-act="claimadmin"]'); await H.wait(300);
+  await page.fill('#lgn', 'Ski Team Paganella'); await page.fill('#lgt', '4');
+  await H.click('form[data-form="create"] button[type="submit"]'); await H.wait(500);
+  let D = await H.docs();
+  const lid = (await H.lids())[0], code = D['leagues/' + lid].code;
+  const teamId = n => Object.keys(D).find(k => k.startsWith('leagues/' + lid + '/teams/') && D[k].name === n).split('/').pop();
+  const T1 = teamId('Squadra 1'), T2 = teamId('Squadra 2'), T3 = teamId('Squadra 3'), T4 = teamId('Squadra 4');
+  const LU = t => D['leagues/' + lid + '/races/f01/lineups/' + t];
+  const R = {
+    [T1]: ['f-julia-scheib', 'f-camille-rast', 'f-zrinka-ljutic', 'm-loic-meillard', 'm-henrik-kristoffersen'],
+    [T2]: ['f-sara-hector', 'f-alice-robinson', 'f-paula-moltzan', 'm-atle-lie-mcgrath', 'm-timon-haugan'],
+    [T3]: ['f-mikaela-shiffrin', 'f-thea-louise-stjernesund', 'f-nina-o-brien', 'm-stefan-brennsteiner', 'm-marco-schwarz'],
+    [T4]: ['f-lara-della-mea', 'f-lara-colturi', 'f-petra-vlhova', 'm-alex-vinatzer', 'm-river-radamus']
+  };
+  const bought = await page.evaluate(([l, R]) => {
+    let i = 0;
+    const jobs = [];
+    Object.keys(R).forEach(t => R[t].forEach(a => jobs.push(window.DB.op({ k: 'buy', lg: l, id: 'p' + (i++), a: a, t: t, price: 5, from: '2026-10-01T00:00:00Z' }))));
+    return Promise.all(jobs).then(() => 'ok', e => e.code);
+  }, [lid, R]);
+  ok(bought === 'ok', 'auction: 20 athletes in 4 teams');
+  await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="asta"]'); await H.wait(100);
+  await H.click('[data-act="auction"][data-v="0"]'); await H.wait(300);
+  ok((await H.docs())['leagues/' + lid].settings.auctionOpen === false, 'auction closed');
+
+  // Anna and Bruno take their teams; Carla enters and skips the choice
+  const enter = async (name, email, pick) => {
+    await H.logout();
+    await page.goto('http://site.test/?invito=' + code, { waitUntil: 'domcontentloaded' }); await H.wait(300);
+    await H.register(name, email, name.toLowerCase() + 'pass'); await H.wait(400);
+    if (pick) await H.pick(pick); else { await H.click('[data-act="pickskip"]'); await H.wait(150); }
+  };
+  await enter('Anna', 'anna@example.it', 'Squadra 1');
+  await enter('Bruno', 'bruno@example.it', 'Squadra 2');
+  await enter('Carla', 'carla@example.it', null);
+  const aUid = await H.uid('anna@example.it'), cUid = await H.uid('carla@example.it');
+  ok(/Il tuo account non è collegato a nessuna squadra/.test(await page.textContent('#noteam')) && !(await page.$('#nextlu')), 'Carla, without a team: the notice, no lineup to set');
+  await shot('c_noteam');
+  await H.click('#tab-squadre'); await H.wait(100);
+  ok(await page.$('#noteam') && !(await page.$('[data-act="luopen"]')), 'Carla: the notice on Squadre too, no lineup button on any team');
+
+  // Anna: her next lineup on top of the home page, the editor in view, saved under her account
+  await H.logout(); await H.login('anna@example.it', 'annapass'); await H.wait(300);
+  ok(await page.$('#nextlu') && /Sölden/.test(await page.textContent('#nextlu')) && /Scegli la formazione/.test(await page.textContent('#nextlu')), 'Anna: «La tua prossima formazione» on top, with the button');
+  await shot('c_home_player');
+  await H.click('#nextlu [data-act="golu"]'); await H.wait(200);
+  ok(await page.evaluate(() => { const r = document.getElementById('lued').getBoundingClientRect(); return r.top >= 0 && r.top < innerHeight; }), 'the editor opens in view');
+  await H.click('[data-act="lusel"][data-v="f-julia-scheib|R"]');
+  await H.click('[data-act="lusel"][data-v="f-zrinka-ljutic|T"]');
+  await H.click('[data-act="lusave"]'); await H.wait(400);
+  D = await H.docs();
+  ok(LU(T1) && LU(T1).t.join() === 'f-camille-rast,f-zrinka-ljutic' && LU(T1).r === 'f-julia-scheib' && LU(T1).uid === aUid, 'Anna saved her Sölden lineup');
+  await H.click('#tab-classifica'); await H.wait(100);
+  ok(/Cambia la formazione/.test(await page.textContent('#nextlu')) && /Rast, Ljuti/.test(await page.textContent('#nextlu')), 'home: her lineup, and «Cambia la formazione»');
+  await H.click('#tab-squadre'); await H.wait(100);
+  await H.click('[data-act="tsel"][data-v="' + T2 + '"]'); await H.wait(100);
+  ok(!(await page.$('[data-act="luopen"]')) && await page.$('[data-act="team"][data-v="' + T1 + '"]'), 'on Bruno\'s team: no lineup button, a way back to her own');
+  const foreign = await page.evaluate(([l, t]) => window.DB.op({ k: 'lu', lg: l, r: 'f01', t: t, lu: { t: ['f-sara-hector'], r: null } }).then(() => 'saved', e => e.code), [lid, T2]);
+  ok(foreign === 'permission-denied', 'rules: Anna cannot set Bruno\'s lineup');
+  ok(await H.raw("return m.setDoc(m.doc(db, 'leagues', a.l, 'pending', a.t), { f01: { t: [], r: null } }, { merge: true })", { l: lid, t: T2 }) === 'permission-denied', 'rules: nor his copy of it');
+  ok(await H.raw("return m.getDoc(m.doc(db, 'leagues', a.l, 'races', 'f01', 'lineups', a.t))", { l: lid, t: T2 }) === 'permission-denied', 'rules: nor read it before the deadline');
+  ok(await H.raw("return m.deleteDoc(m.doc(db, 'leagues', a.l, 'members', a.u))", { l: lid, u: aUid }) === 'permission-denied', 'rules: nobody leaves the league alone (to come back for a second team)');
+  ok(await H.raw("return m.updateDoc(m.doc(db, 'leagues', a.l, 'teams', a.t), { uid: a.u, owner: 'Anna' })", { l: lid, t: T3, u: aUid }) === 'permission-denied', 'rules: nor takes a second team');
+
+  // Werner: told who has no team; locks the free teams; sets the lineup of the team nobody plays
+  await H.logout(); await H.login('werner@example.it', 'segreta1'); await H.wait(400);
+  ok(/Carla.*è nella lega ma non ha una squadra/.test(await page.textContent('#links')) && !(await page.$('#rulesold')), 'Werner\'s home: Carla has no team; rules up to date');
+  await shot('c_home_admin');
+  await H.click('#links [data-act="goadm"]'); await H.wait(150);
+  ok(/Squadra 3, Squadra 4.*non sono collegate a nessun account/.test(await page.textContent('#links')), 'Gestione → Squadre: the teams without account');
+  await H.click('[data-act="lockteams"][data-v="1"]'); await H.wait(300);
+  ok((await H.docs())['leagues/' + lid].settings.lockTeams === true, 'Werner: from now on he alone links the teams');
+  await shot('c_gestione_squadre');
+  await H.click('#tab-squadre'); await H.click('[data-act="tsel"][data-v="' + T4 + '"]'); await H.wait(100);
+  await H.click('[data-act="luopen"][data-v="f01|' + T4 + '"]'); await H.wait(100);
+  await H.click('[data-act="lusave"]'); await H.wait(400);
+  D = await H.docs();
+  ok(LU(T4) && LU(T4).t.length === 2, 'Werner set the lineup of the team without an account');
+
+  // Carla: teams locked, so nothing to take; told to ask Werner, who links her
+  await H.logout(); await H.login('carla@example.it', 'carlapass'); await H.wait(400);
+  ok(!(await page.$('.picks')) && /Chiedi a Werner di collegarti/.test(await page.textContent('#noteam')) && !(await page.$('#noteam [data-act="repick"]')),
+    'Carla: teams locked, no picker; the notice tells her to ask Werner');
+  ok(await page.evaluate(([l, t]) => window.DB.claimTeam(l, t).then(() => 'taken', e => e.code), [lid, T3]) === 'permission-denied', 'rules: with the teams locked nobody takes a free one');
+  await shot('c_noteam_locked');
+  await H.logout(); await H.login('werner@example.it', 'segreta1'); await H.wait(300);
+  await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="squadre"]'); await H.wait(100);
+  await page.selectOption('#asg-' + T3, cUid); await H.wait(400);
+  ok(/Squadra 4.* non è collegata/.test(await page.textContent('#links')) && !/Carla/.test(await page.textContent('#links')), 'Werner linked Carla to Squadra 3: only Squadra 4 has no account');
+  await H.logout(); await H.login('carla@example.it', 'carlapass'); await H.wait(400);
+  ok(!(await page.$('#noteam')) && await page.$('#nextlu'), 'Carla: no notice any more, her next lineup on top');
+
+  // old rules in Firebase: the player is told why the save failed, the organiser is warned
+  await page.evaluate(() => {
+    window.__fake.oldRules = true;
+    window.__fake.extraDeny = (m, p, ctx) => /^leagues\/[^/]+\/races\/[^/]+\/lineups\//.test(p) && m !== 'get' && m !== 'list' && (ctx.pre['leagues/' + p.split('/')[1]] || {}).admin !== ctx.uid;
+  });
+  await H.click('#nextlu [data-act="golu"]'); await H.wait(150);
+  await H.click('[data-act="lusave"]'); await H.wait(400);
+  ok(/deve aggiornare le regole del database/.test(await page.textContent('#lued .why')), 'Carla\'s save refused: the editor says the rules must be updated');
+  await shot('c_rules_player');
+  await H.logout(); await H.login('werner@example.it', 'segreta1'); await H.wait(400);
+  ok(await page.$('#rulesold') && /Le regole del database sono vecchie/.test(await page.textContent('#rulesold')), 'Werner: warned that the published rules are old');
+  await shot('c_rules_admin');
+  await H.click('#tab-gestione'); await H.wait(100);
+  ok(await page.$('#rulesold'), 'the warning in Gestione too');
+  await page.evaluate(() => { window.__fake.oldRules = false; window.__fake.extraDeny = null; });
+  await H.logout(); await H.login('werner@example.it', 'segreta1'); await H.wait(400);
+  ok(!(await page.$('#rulesold')), 'rules updated: no warning');
+
+  // after the deadline (Sölden women 09:00): Anna cannot change it; Werner corrects any lineup, its copy follows
+  await page.clock.setFixedTime(new Date('2026-10-24T07:40:00Z'));
+  await H.logout(); await H.login('anna@example.it', 'annapass'); await H.wait(300);
+  await H.click('#tab-squadre'); await H.wait(100);
+  ok(!(await page.$('[data-act="luopen"][data-v^="f01|"]')), 'after the deadline Anna has no button for Sölden');
+  ok(await page.evaluate(([l, t]) => window.DB.op({ k: 'lu', lg: l, r: 'f01', t: t, lu: { t: ['f-julia-scheib'], r: null } }).then(() => 'saved', e => e.code), [lid, T1]) === 'permission-denied', 'rules: a late lineup is refused');
+  await H.logout(); await H.login('werner@example.it', 'segreta1'); await H.wait(800);
+  D = await H.docs();
+  ok(D['leagues/' + lid].archive && D['leagues/' + lid].archive.f01 && D['leagues/' + lid].archive.f01[T1], 'closed race copied into the league document');
+  await H.click('#tab-gare'); await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150);
+  ok((await page.$$('.rdet [data-act="luopen"]')).length === 4, 'Gare, closed race: a «Correggi» button for each team');
+  await H.click('.rdet [data-act="luopen"][data-v="f01|' + T1 + '"]'); await H.wait(150);
+  ok(/Gara già chiusa: la correggi tu/.test(await page.textContent('#lued')), 'the editor says the race is closed and he is correcting it');
+  await H.click('[data-act="lusel"][data-v="f-zrinka-ljutic|"]');
+  await H.click('[data-act="lusel"][data-v="f-julia-scheib|T"]');
+  await shot('c_correct');
+  await H.click('[data-act="lusave"]'); await H.wait(400);
+  D = await H.docs();
+  ok(LU(T1).t.join() === 'f-camille-rast,f-julia-scheib' && D['leagues/' + lid].archive.f01[T1].t.join() === 'f-camille-rast,f-julia-scheib' && LU(T1).uid === aUid,
+    'Werner corrected Anna\'s closed lineup: the lineup, still under Anna, and its copy');
+  ok(/Squadra 1: formazione per GS Sölden salvata/.test(await page.textContent('#fs-toast')), 'saved, for Squadra 1');
+  await H.click('#tab-squadre'); await H.click('[data-act="tsel"][data-v="' + T2 + '"]'); await H.wait(100);
+  ok(/Gare chiuse/.test(await H.txt()) && await page.$('[data-act="luopen"][data-v="f01|' + T2 + '"]'), 'Squadre: the closed races to correct, for the organiser');
+  await H.logout(); await H.login('anna@example.it', 'annapass'); await H.wait(300);
+  await H.click('#tab-gare'); await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150);
+  ok(/Rast, Scheib/.test(await page.textContent('.rdet')) && !(await page.$('.rdet [data-act="luopen"]')), 'Anna sees the corrected lineup, and cannot change any');
+  ok(!page.errors.length, 'no page errors ' + JSON.stringify(page.errors));
+  await page.context().close();
+}
+
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-  try { await flowA(browser); await flowB(browser); }
+  try { await flowA(browser); await flowB(browser); await flowC(browser); }
   catch (e) { console.error('FAIL', e); process.exitCode = 1; }
   await browser.close();
 })();

@@ -33,6 +33,10 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if gadmin();
     }
+    // versione di queste regole: il sito la controlla e avvisa chi organizza se le regole pubblicate sono vecchie
+    match /config/rules20261023 {
+      allow get: if signedIn();
+    }
 
     // il profilo: lo username deve essere riservato a questo account in usernames/
     match /users/{uid} {
@@ -80,16 +84,18 @@ service cloud.firestore {
           || (uid == me() && resource.data.team == null
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['team'])
               && getAfter(/databases/$(database)/documents/leagues/$(lid)/teams/$(request.resource.data.team)).data.uid == me());
-        allow delete: if ladmin(lid) || uid == me();
+        // dalla lega toglie solo chi organizza: chi uscisse da solo rientrerebbe senza squadra e potrebbe prenderne una seconda
+        allow delete: if ladmin(lid);
       }
 
       match /teams/{tid} {
         allow read: if inLeague(lid);
         allow create, delete: if ladmin(lid);
-        // un partecipante senza squadra può prendere una squadra libera, una sola; cambiarla la può solo chi organizza.
-        // chi ha la squadra può cambiarle il nome (da 1 a 30 caratteri), e nient'altro
+        // un partecipante senza squadra può prendere una squadra libera, una sola, se chi organizza non ha bloccato le squadre;
+        // cambiarla la può solo chi organizza. Chi ha la squadra può cambiarle il nome (da 1 a 30 caratteri), e nient'altro
         allow update: if ladmin(lid)
           || (member(lid) && resource.data.uid == null && request.resource.data.uid == me()
+              && leagueDoc(lid).get('settings', {}).get('lockTeams', false) != true
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid', 'owner'])
               && get(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == null
               && getAfter(/databases/$(database)/documents/leagues/$(lid)/members/$(me())).data.team == tid)
@@ -105,8 +111,8 @@ service cloud.firestore {
         allow read, write: if ladmin(lid) || (member(lid) && owns(lid, tid));
       }
 
-      // la formazione che conta: la scrive solo chi ha la squadra e solo prima della chiusura della gara;
-      // gli altri la vedono dopo la chiusura
+      // la formazione che conta: la scrive chi ha la squadra, solo prima della chiusura della gara, oppure chi organizza,
+      // sempre (anche per correggere una gara chiusa); gli altri la vedono dopo la chiusura
       match /races/{rid}/lineups/{tid} {
         function lock() { return leagueDoc(lid).locks[rid]; }
         allow read: if ladmin(lid) || (member(lid) && (request.time > lock() || owns(lid, tid)));

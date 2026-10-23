@@ -36,7 +36,8 @@
   var ROOT = null, S = null, C = null, bootNote = '';
   var ui = { tab: 'classifica', team: null, gf: '', lg: '', ld: '', lfree: false, lq: '', adm: 'asta', lid: '', cl: 'gen' };
   var saved = lsGet(UIK);
-  if (saved) Object.keys(ui).forEach(function (k) { if (saved[k] != null && k !== 'lq') ui[k] = saved[k]; });
+  // (the team page always opens on one's own team: a team looked at last time is not kept)
+  if (saved) Object.keys(ui).forEach(function (k) { if (saved[k] != null && k !== 'lq' && k !== 'team') ui[k] = saved[k]; });
   var hash = (location.hash || '').slice(1);
   if (['classifica', 'squadre', 'gare', 'listone', 'regole', 'profilo'].indexOf(hash) >= 0) ui.tab = hash;
   // invite link (?invito=CODICE): the code is kept until the account is inside the league
@@ -70,6 +71,7 @@
   function onState(st) {
     if (st.phase === 'signedout' && (!STATE || STATE.phase !== 'signedout')) {
       tmp.auth = invite ? 'register' : 'login'; tmp.authOk = ''; tmp.joinErr = ''; tmp.lu = null; tmp.all = null; tmp.skipPick = {}; tmp.pickT = null;
+      tmp.race = null; tmp.allShut = false; tmp.rel = null; tmp.ren = null;
       var tt0 = D.getElementById('fs-toast'); if (tt0) tt0.hidden = true;
     }
     if (st.phase === 'ready' && STATE && STATE.phase === 'signedout') { tmp.authErr = ''; tmp.authOk = ''; ui.team = null; ui.tab = 'classifica'; saveUi(); }
@@ -117,7 +119,7 @@
     'fs/bad-code': 'Codice non valido: controllalo con chi organizza la lega.',
     'fs/bad-name': 'Lo username va da 3 a 20 caratteri: lettere, numeri, punto, trattino o trattino basso, senza spazi.',
     'fs/name-taken': 'Questo username è già preso: scegline un altro.',
-    'permission-denied': 'Operazione non permessa: la formazione potrebbe essere già chiusa, o non hai i permessi.',
+    'permission-denied': 'Il database non ha permesso questa modifica.',
     'unavailable': 'Connessione assente: riprova tra poco.'
   };
   function errText(e) { var c = e && e.code; return ERR[c] || ('Operazione non riuscita' + (c ? ' (' + c + ')' : '') + '.'); }
@@ -126,7 +128,11 @@
     if (!S || !CAN) return false;
     if (FS.LEAGUE_OPS[op.k] && !op.lg) op.lg = S.lid;
     if (!FS.applyOp(FS.clone(ROOT), op)) { toast('Questa modifica non è possibile.'); return false; }
-    return DBX.op(op).then(function () { return true; }, function (e) { toast((errMsg && errMsg[e && e.code]) || errText(e)); return false; });
+    return DBX.op(op).then(function () { return true; }, function (e) {
+      tmp.lastErr = (errMsg && errMsg[e && e.code]) || errText(e);
+      toast(tmp.lastErr);
+      return false;
+    });
   }
 
   // ---------- derived helpers
@@ -147,13 +153,34 @@
     var free = S.teams.filter(function (t) { return !t.uid; }), nm = FS.norm(STATE && STATE.user ? STATE.user.name : '');
     return free.filter(function (t) { return nm && (FS.norm(t.owner) === nm || FS.norm(t.name).indexOf(nm) >= 0); })[0] || free[0] || null;
   }
+  // lineups: a player sets only the team linked to their account, and only before the race closes;
+  // the organiser sets any team's, at any time (also to correct a race already closed)
   function canLineup(tid) { if (!CAN || !ME) return false; if (OWNER) return true; var t = team(tid); return !!t && t.uid === ME; }
+  function luOpen(r) { return OWNER || lockOf(r) > now(); }
+  function shut(r) { return lockOf(r) <= now(); }
+  // whether people who join may take a free team themselves (the organiser can switch it off once the teams are set)
+  function lockTeams() { return !!(S && S.league.lockTeams); }
+  function organiserName() { var e = S && entryOf(S.lid), m = e && e.admin ? memberOf(e.admin) : null; return m && m.name ? m.name : 'chi organizza la lega'; }
   function members() { var e = S && entryOf(S.lid); return (e && e.members) || []; }
   function memberOf(uid) { return members().filter(function (m) { return m.uid === uid; })[0] || null; }
   // who plays a team: the username of the linked account, else the name the organiser wrote
   function ownerName(t) { var m = t.uid ? memberOf(t.uid) : null; return m ? m.name : (t.owner || ''); }
-  // a participant without a team is first asked which team is theirs
-  function needPick() { return !!(S && !OWNER && !myTeam() && S.teams.length && !tmp.skipPick[S.lid]); }
+  // a participant without a team is first asked which team is theirs, if there is one to take
+  // (otherwise they enter the league, where a notice says whom to ask)
+  function needPick() { return !!(S && !OWNER && !myTeam() && !lockTeams() && S.teams.some(function (t) { return !t.uid; }) && !tmp.skipPick[S.lid]); }
+  // accounts and teams that are not linked: their lineups cannot be set by anyone but the organiser
+  function links() {
+    var ms = members(), byUid = {}, e = entryOf(S.lid), adm = e ? e.admin : null;
+    ms.forEach(function (m) { byUid[m.uid] = m; });
+    return {
+      // teams no account plays: the organiser sets their lineups
+      teamsFree: S.teams.filter(function (t) { return !t.uid; }),
+      // people in the league without a team (the organiser does not need one)
+      noTeam: ms.filter(function (m) { return m.uid !== adm && !S.teams.some(function (t) { return t.uid === m.uid; }); }),
+      // teams linked to an account that has left the league: nobody can set their lineups but the organiser
+      orphan: S.teams.filter(function (t) { return t.uid && !byUid[t.uid]; })
+    };
+  }
   var DISC = { GS: 'Gigante', SL: 'Slalom', DH: 'Discesa', SG: 'SuperG' };
   var DCODES = ['DH', 'SG', 'GS', 'SL'];
   var GLAB = { M: 'Uomini', F: 'Donne' };
@@ -238,13 +265,65 @@
       '<span>Connesso come ' + esc(STATE.user.name) + ' · <button type="button" class="linkb" data-act="logout">Esci</button></span></footer>';
   }
 
+  // ---------- notices: what keeps a player from setting lineups, and what the organiser has to fix
+  function para(s) { return '<p>' + s + '</p>'; }
+  function boldList(arr, f) { return arr.map(function (x) { return '<b>' + esc(f(x)) + '</b>'; }).join(', '); }
+  // a player whose account is not linked to a team of this league: said on every page, with the way out
+  function noTeamNote() {
+    if (!S || OWNER || myTeam() || !S.teams.length) return '';
+    var free = !lockTeams() && freeTeam(), u = STATE.user;
+    return '<div class="alert" role="note" id="noteam">' + para('<b>Il tuo account non è collegato a nessuna squadra</b> di questa lega, quindi non puoi mettere le formazioni.') +
+      (free ? para('Se la tua squadra è ancora libera, prendila tu.') + '<div class="acts"><button type="button" class="btn red" data-act="repick">Scegli la tua squadra</button></div>'
+        : para('Chiedi a <b>' + esc(organiserName()) + '</b> di collegarti: in Gestione → Squadre sceglie il tuo nome, <b>' + esc(u.name) + '</b>, nella tua squadra.')) +
+      '<p class="small muted">Sei entrato come ' + esc(u.email) + ': se la squadra l\'avevi presa con un altro account, esci ed entra con quello.' +
+      (ROOT.leagues.length > 1 ? ' Sei in più leghe: controlla in alto di aver aperto quella giusta.' : '') + '</p></div>';
+  }
+  // the rules published in Firebase are older than the site's (db.js checks it for the organiser)
+  function rulesNote() {
+    if (!OWNER || !STATE.rulesOld) return '';
+    // the text is fetched now, so the button can copy it at once (Safari copies only during the tap)
+    if (!tmp.rulesGet) {
+      tmp.rulesGet = true;
+      fetch('firestore.rules', { cache: 'no-store' }).then(function (x) { return x.ok ? x.text() : ''; }).then(function (s) { tmp.rulesTxt = s; }, function () { tmp.rulesGet = false; });
+    }
+    return '<div class="alert bad" role="alert" id="rulesold">' + para('<b>Le regole del database sono vecchie.</b> Con queste il database può rifiutare le formazioni dei giocatori e altre modifiche.') +
+      '<p class="small">In Firebase apri Firestore Database → Regole, cancella tutto, incolla le regole nuove e premi Pubblica. Poi ricarica questa pagina.</p>' +
+      '<div class="acts"><button type="button" class="btn red" data-act="rulescopy">Copia le regole nuove</button>' +
+      '<a class="mini" href="https://console.firebase.google.com/project/' + esc(((window.FS_CONFIG || {}).firebase || {}).projectId || '') + '/firestore" target="_blank" rel="noopener">Apri Firebase</a>' +
+      '<a class="mini" href="firestore.rules" target="_blank" rel="noopener">Vedi le regole</a></div></div>';
+  }
+  // for the organiser: people without a team, teams nobody plays, teams of someone who left (full: the whole picture)
+  function linksNote(full) {
+    if (!OWNER || !S.teams.length) return '';
+    var L = links(), items = [];
+    if (L.noTeam.length) items.push(boldList(L.noTeam, function (m) { return m.name || 'senza nome'; }) + (L.noTeam.length === 1 ? ' è nella lega ma non ha una squadra' : ' sono nella lega ma non hanno una squadra') + ': finché non ' + (L.noTeam.length === 1 ? 'lo' : 'li') + ' colleghi, non ' + (L.noTeam.length === 1 ? 'può' : 'possono') + ' mettere le formazioni.');
+    if (L.orphan.length) items.push(boldList(L.orphan, function (t) { return t.name; }) + (L.orphan.length === 1 ? ' è collegata a un account che non è più nella lega' : ' sono collegate ad account che non sono più nella lega') + ': collegale di nuovo a chi le gioca.');
+    if (full && L.teamsFree.length) items.push(boldList(L.teamsFree, function (t) { return t.name; }) + (L.teamsFree.length === 1 ? ' non è collegata a nessun account' : ' non sono collegate a nessun account') + ': le formazioni le metti tu' + (lockTeams() ? '.' : ', e chi entra con il codice senza squadra può prenderle.'));
+    if (!items.length) return full ? '<p class="ok">Ogni squadra è collegata all\'account di chi la gioca.</p>' : '';
+    return '<div class="alert" role="note" id="links">' + items.map(para).join('') +
+      (full ? '<p class="small muted">Per collegare: nella squadra, alla voce Giocatore, scegli il suo nome. Le formazioni di ogni squadra le puoi sempre mettere e correggere anche tu.</p>' : '<div class="acts"><button type="button" class="mini" data-act="goadm" data-v="squadre">Sistema in Gestione → Squadre</button></div>') + '</div>';
+  }
+  // the next lineup to set, first thing on the home page
+  function nextLuCard() {
+    var mt = myTeam();
+    if (!mt) return '';
+    var r = upcoming().filter(function (x) { return C.eff[x.id][mt.id].roster.length; })[0];
+    if (!r) return '';
+    var e = C.eff[r.id][mt.id];
+    return '<section class="sec"><div class="panel nextlu" id="nextlu"><div class="lbl">La tua prossima formazione</div><div class="lutop">' + raceHead(r) + '<span></span></div>' +
+      '<div class="lusum small">' + luText(e) + ' <span class="muted">· entro ' + esc(tlab(lockOf(r))) + '</span></div>' +
+      '<div class="acts"><button type="button" class="btn red" data-act="golu" data-v="' + r.id + '">' + (e.src === 'scelta' ? 'Cambia la formazione' : 'Scegli la formazione') + '</button></div></div></section>';
+  }
+
   // ---------- Classifica
   function vClassifica() {
     var kind = CUPS[ui.cl] ? ui.cl : 'gen', cup = CUPS[kind];
     var inCup = function (r) { return r.st !== 'canc' && (!cup.d || cup.d.indexOf(r.t) >= 0); };
     var st = standings(kind), nDone = S.races.filter(function (r) { return inCup(r) && hasRes(r); }).length, nTot = S.races.filter(inCup).length;
     var first = S.races.filter(inCup).sort(byDate)[0], DART = { GS: 'il gigante', SL: 'lo slalom', DH: 'la discesa', SG: 'il superG' };
-    var h = '<section class="sec"><div class="chips">' + chipset('cl', [['gen', 'Generale'], ['T', 'Tecniche'], ['V', 'Veloci']], kind) + '</div>' +
+    var notes = rulesNote() + linksNote(false);
+    var h = (notes ? '<section class="sec">' + notes + '</section>' : '') + nextLuCard() +
+      '<section class="sec"><div class="chips">' + chipset('cl', [['gen', 'Generale'], ['T', 'Tecniche'], ['V', 'Veloci']], kind) + '</div>' +
       '<div class="lbl">' + cup.lbl + '</div><h1 class="h1">' + cup.h + '</h1><p class="sub">';
     if (kind !== 'gen') h += (kind === 'T' ? 'Punti di gigante e slalom' : 'Punti di discesa e superG') + ', uomini e donne insieme. ';
     if (nDone) h += 'Dopo ' + nDone + ' gare su ' + nTot + (st.lg ? ' · ultima giornata G' + st.lg.n + ', ' + drange(st.lg.from, st.lg.to) : '') + '.';
@@ -260,7 +339,8 @@
       }).join('') + '</ol>';
     }
     h += '</section>';
-    if (!myTeam() && freeTeam()) h += '<section class="sec"><div class="capbox"><span>Non hai ancora una squadra in questa lega.</span><button type="button" class="btn ghost" data-act="' + (OWNER ? 'team' : 'repick') + '" data-v="' + freeTeam().id + '">Scegli la tua squadra</button></div></section>';
+    // (a player without a team has the notice at the top of every page)
+    if (OWNER && !myTeam() && freeTeam()) h += '<section class="sec"><div class="capbox"><span>Non hai una squadra in questa lega: se giochi anche tu, prendi la tua.</span><button type="button" class="btn ghost" data-act="team" data-v="' + freeTeam().id + '">Scegli la tua squadra</button></div></section>';
     var owned = S.purchases.filter(function (p) { return !p.to; }).length, need = S.teams.length * 2 * (S.league.perGender || 6);
     if (owned < need) {
       h += '<section class="sec"><div class="lbl">Rose</div><div class="panel gap"><div class="acts between"><span><b class="num">' + owned + '</b> atleti assegnati su <b class="num">' + need + '</b></span>' +
@@ -289,30 +369,43 @@
   function lineupEditor(r, tid) {
     var e = C.eff[r.id][tid], sel = tmp.lu.sel, di = FS.DIDX[r.t];
     var nT = luCount(sel, 'T'), nR = luCount(sel, 'R'), max = S.league.starters || 2;
-    var h = '<div class="lued"><p class="small muted">' + GLAB[r.g] + ' · ' + DISC[r.t] + ' ' + esc(r.v) + '. Accanto al nome, i punti fatti in questa disciplina nell\'ultima stagione.</p>';
+    var h = '<div class="lued" id="lued"><p class="small muted">' + (OWNER && (!myTeam() || myTeam().id !== tid) ? '<b>' + esc(tname(tid)) + '</b> · ' : '') + GLAB[r.g] + ' · ' + DISC[r.t] + ' ' + esc(r.v) + '. Accanto al nome, i punti fatti in questa disciplina nell\'ultima stagione.</p>';
+    if (shut(r)) h += '<p class="why">Gara già chiusa: la correggi tu, da organizzatore. Punti e classifica si aggiornano subito.</p>';
     e.roster.slice().sort(function (x, y) { return (ath(y).p[di] - ath(x).p[di]) || (ath(y).q - ath(x).q); }).forEach(function (aid) {
       var a = ath(aid), s = sel[aid] || '';
       h += '<div class="luath">' + bib(a) + '<span class="an">' + esc(a.n) + ' <span class="nat">' + esc(a.c) + '</span>' + injTag(a) + '<span class="lmeta">' + r.t + ' ' + esc(a.tpy || '25/26') + ': <span class="num">' + (a.p ? a.p[di] : 0) + '</span> pt' + (a.inj ? ' · ' + esc(a.note || '') : '') + '</span></span>' +
         '<span class="seg" role="group" aria-label="Scelta per ' + esc(a.n) + '">' + segBtn(aid, 'T', 'Titolare', s) + segBtn(aid, 'R', 'Riserva', s) + segBtn(aid, '', 'Fuori', s) + '</span></div>';
     });
+    if (tmp.lu.err) h += '<p class="why" role="alert">' + esc(tmp.lu.err) + '</p>';
     h += '<div class="acts between"><span class="small muted">Titolari ' + nT + '/' + max + ' · riserva ' + nR + '/1</span><span class="acts"><button type="button" class="btn ghost" data-act="luclose">Annulla</button>' +
       '<button type="button" class="btn red" data-act="lusave"' + (nT && !tmp.lu.busy ? '' : ' disabled') + '>' + (tmp.lu.busy ? 'Salvo…' : 'Salva formazione') + '</button></span></div></div>';
     return h;
   }
+  // one race in a team's list of lineups, with its button and, when open, the editor
+  function luRow(r, tid) {
+    var e = C.eff[r.id][tid], editing = tmp.lu && tmp.lu.r === r.id && tmp.lu.t === tid, closed = shut(r);
+    var h = '<div class="lurow"><div class="lutop">' + raceHead(r) + (canLineup(tid) && luOpen(r) && e.roster.length && !editing ? '<button type="button" class="mini' + (closed ? '' : ' go') + '" data-act="luopen" data-v="' + r.id + '|' + tid + '">' + (closed ? 'Correggi' : 'Formazione') + '</button>' : '<span></span>') + '</div>' +
+      '<div class="lusum small">' + luText(e) + ' <span class="muted">· ' + (closed ? 'chiusa ' : 'entro ') + esc(tlab(lockOf(r))) + '</span></div></div>';
+    return h + (editing ? lineupEditor(r, tid) : '');
+  }
   function lineupSection(tid) {
     var ups = upcoming(), t = team(tid), mine = myTeam();
     var h = '<div class="rg"><div class="rgh"><span class="lbl">Formazioni</span><span class="small muted">' + (S.league.starters || 2) + ' titolari + 1 riserva per gara</span></div>';
-    if (!ups.length) return h + '<p class="muted small gap">Nessuna gara in arrivo.</p></div>';
     var see = canLineup(tid) || (mine && mine.id === tid);
-    if (!see) return h + '<p class="muted small gap">Le formazioni di ' + esc(t.name) + ' si vedono nella pagina Gare quando si chiudono, ' + lockText(S.league) + '.</p></div>';
-    (tmp.allRaces ? ups : ups.slice(0, 6)).forEach(function (r) {
-      var e = C.eff[r.id][tid];
-      var editing = tmp.lu && tmp.lu.r === r.id && tmp.lu.t === tid;
-      h += '<div class="lurow"><div class="lutop">' + raceHead(r) + (canLineup(tid) && e.roster.length && !editing ? '<button type="button" class="mini" data-act="luopen" data-v="' + r.id + '">Formazione</button>' : '<span></span>') + '</div>' +
-        '<div class="lusum small">' + luText(e) + ' <span class="muted">· entro ' + esc(tlab(lockOf(r))) + '</span></div></div>';
-      if (editing) h += lineupEditor(r, tid);
-    });
+    if (!see) return h + '<p class="muted small gap">Le formazioni di ' + esc(t.name) + ' si vedono nella pagina Gare quando si chiudono, ' + lockText(S.league) + '.</p>' +
+      (mine ? '<div class="acts gap"><button type="button" class="btn ghost" data-act="team" data-v="' + mine.id + '">Vai alla tua squadra</button></div>' : '') + '</div>';
+    if (!ups.length) h += '<p class="muted small gap">Nessuna gara in arrivo.</p>';
+    (tmp.allRaces ? ups : ups.slice(0, 6)).forEach(function (r) { h += luRow(r, tid); });
     if (ups.length > 6) h += '<div class="acts gap"><button type="button" class="mini" data-act="allraces">' + (tmp.allRaces ? 'Mostra solo le prossime 6' : 'Mostra tutte le ' + ups.length + ' gare') + '</button></div>';
+    // the organiser can correct the races already closed (the latest first)
+    if (OWNER) {
+      var done = S.races.filter(function (r) { return r.st !== 'canc' && shut(r) && C.eff[r.id][tid].roster.length; }).sort(byDate).reverse();
+      if (done.length) {
+        h += '<div class="rgh gap"><span class="lbl">Gare chiuse</span><span class="small muted">le correggi solo tu</span></div>';
+        (tmp.allShut ? done : done.slice(0, 3)).forEach(function (r) { h += luRow(r, tid); });
+        if (done.length > 3) h += '<div class="acts gap"><button type="button" class="mini" data-act="allshut">' + (tmp.allShut ? 'Mostra solo le ultime 3' : 'Mostra tutte le ' + done.length + ' gare chiuse') + '</button></div>';
+      }
+    }
     return h + '<p class="hint gap">Se non scegli, vale l\'ultima formazione della stessa disciplina, se no l\'ultima di quel genere; all\'inizio è automatica, con chi ha fatto più punti in quella disciplina.</p></div>';
   }
   function vSquadre() {
@@ -328,7 +421,8 @@
         '<div class="acts"><button type="submit" class="btn red"' + (tmp.busy ? ' disabled' : '') + '>Salva il nome</button><button type="button" class="btn ghost" data-act="renno">Annulla</button></div></form>';
       else h += '<div class="acts renrow"><button type="button" class="mini" data-act="ren" data-v="' + tid + '">Rinomina la squadra</button></div>';
     }
-    if (CAN && ME && !t.uid && !mine) h += '<div class="capbox"><span>Squadra libera. È la tua? Prendila per scegliere le formazioni: si fa una volta sola.</span><button type="button" class="btn ghost" data-act="claim" data-v="' + tid + '">Sì, è la mia</button></div>';
+    if (CAN && ME && !t.uid && !mine && (OWNER || !lockTeams())) h += '<div class="capbox"><span>Squadra libera. È la tua? Prendila per scegliere le formazioni: si fa una volta sola.</span><button type="button" class="btn ghost" data-act="claim" data-v="' + tid + '">Sì, è la mia</button></div>';
+    else if (!OWNER && mine && mine.id !== tid) h += '<div class="capbox"><span class="small muted">Stai guardando la squadra di ' + esc(ownerName(t) || 'un altro giocatore') + '.</span><button type="button" class="mini" data-act="team" data-v="' + mine.id + '">Vai alla tua squadra</button></div>';
     FS.GENDERS.forEach(function (g) {
       var rows = ts.roster.filter(function (p) { var a = ath(p.a); return a && a.g === g; });
       h += '<div class="rg"><div class="rgh"><span class="lbl">' + GLAB[g] + '</span><span class="num small muted">' + rows.length + '/' + ts.per + '</span></div>';
@@ -402,16 +496,25 @@
     if (it.role === 'R') return '<span class="' + (it.counted ? 'cnt' : 'out') + '">riserva ' + nm + (it.counted ? ' entrata · ' + st + bx : ' non entrata') + '</span>';
     return '<span class="' + (it.counted ? 'cnt' : 'out') + '">' + nm + ' · ' + st + bx + '</span>';
   }
+  // in a race's table: change this team's lineup (the player's own before the deadline; the organiser any, any time)
+  function luBtn(r, tid) {
+    var e = C.eff[r.id][tid], editing = tmp.lu && tmp.lu.r === r.id && tmp.lu.t === tid;
+    if (editing || !canLineup(tid) || !luOpen(r) || !e.roster.length) return '';
+    return '<div class="tdact"><button type="button" class="mini" data-act="luopen" data-v="' + r.id + '|' + tid + '">' + (shut(r) ? 'Correggi' : 'Cambia') + '</button></div>';
+  }
   function raceDetail(r) {
     var h = '<div class="rdet">', st0 = FS.startOf(r);
     if (r.st !== 'canc') h += '<p class="small muted">' + (st0 != null ? 'Partenza ' + esc(r.h) + ' ora italiana · formazioni entro ' + esc(tlab(lockOf(r))) : 'Orario di partenza non ancora noto · formazioni entro ' + esc(tlab(lockOf(r)))) + '</p>';
     if (r.note) h += '<p class="small muted">' + esc(r.note) + '</p>';
     if (r.st === 'canc') return h + '<p class="muted">Gara annullata: nessun punto.</p></div>';
     var rr = C.raceRes[r.id], locked = lockOf(r) <= now(), mine = myTeam();
+    // the lineup being changed from this page (the organiser: any team, also after the deadline)
+    var ed = tmp.lu && tmp.lu.r === r.id && team(tmp.lu.t) ? '<div class="lbl">Formazione di ' + esc(tname(tmp.lu.t)) + '</div>' + lineupEditor(r, tmp.lu.t) : '';
     if (!rr) {
       h += '<p class="muted">' + (r.d <= todayRome() ? 'Risultati non ancora inseriti.' : 'Si corre ' + dlab(r.d, true) + '.') + '</p>';
       var vis = S.teams.filter(function (t) { return locked || canLineup(t.id) && OWNER || (mine && mine.id === t.id); });
-      if (vis.length) h += '<div class="tw"><table class="rtab"><thead><tr><th>Squadra</th><th>Formazione</th></tr></thead><tbody>' + vis.map(function (t) { return '<tr><td>' + esc(t.name) + '</td><td class="small">' + luText(C.eff[r.id][t.id]) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      if (vis.length) h += '<div class="tw"><table class="rtab"><thead><tr><th>Squadra</th><th>Formazione</th></tr></thead><tbody>' + vis.map(function (t) { return '<tr><td>' + esc(t.name) + luBtn(r, t.id) + '</td><td class="small">' + luText(C.eff[r.id][t.id]) + '</td></tr>'; }).join('') + '</tbody></table></div>';
+      h += ed;
       if (!locked) h += '<p class="small muted">Le formazioni di tutte le squadre si vedono dalle ' + esc(tlab(lockOf(r))) + '.</p>';
       if (GADMIN && r.d <= todayRome()) h += '<div class="acts"><button type="button" class="mini" data-act="gores" data-v="' + r.id + '">Inserisci risultati</button></div>';
       return h + '</div>';
@@ -449,8 +552,8 @@
     var teams = S.teams.map(function (t) { return { t: t, x: rr.teams[t.id] || { score: 0, items: [] } }; }).sort(function (a, b) { return b.x.score - a.x.score; });
     h += '<div class="tw"><table class="rtab"><thead><tr><th>Squadra</th><th>Titolari e riserva</th><th class="r">Pt</th></tr></thead><tbody>' + teams.map(function (o) {
       var its = o.x.items.length ? o.x.items.map(function (it) { return itemText(it, r); }).join('<br>') : '<span class="out">nessun atleta schierato</span>';
-      return '<tr><td>' + esc(o.t.name) + '</td><td class="small">' + its + '</td><td class="r num">' + fmt(o.x.score) + '</td></tr>';
-    }).join('') + '</tbody></table></div>';
+      return '<tr><td>' + esc(o.t.name) + luBtn(r, o.t.id) + '</td><td class="small">' + its + '</td><td class="r num">' + fmt(o.x.score) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' + ed;
     h += '<p class="small muted">Fonte: ' + esc(res.src || '—') + (res.at ? ' · ' + esc(tlab(Date.parse(res.at))) : '') + '</p>';
     return h + '</div>';
   }
@@ -605,7 +708,7 @@
     if (GADMIN) secs.splice(1, 0, ['ris', 'Risultati']), secs.splice(3, 0, ['gare', 'Calendario'], ['atleti', 'Atleti']);
     if (!GADMIN && ['ris', 'gare', 'atleti'].indexOf(ui.adm) >= 0) ui.adm = 'asta';
     var h = '<section class="sec"><div class="lbl">Gestione</div><h1 class="h1">Pannello della lega</h1><p class="sub">Ogni modifica si salva subito e la vedono tutti.</p>';
-    h += '<div class="chips scroll">' + chipset('adm', secs, ui.adm) + '</div>';
+    h += rulesNote() + '<div class="chips scroll">' + chipset('adm', secs, ui.adm) + '</div>';
     if (['asta', 'squadre', 'imp'].indexOf(ui.adm) >= 0) h += '<p class="small muted">Lega: <b>' + esc(S.league.name || 'Lega') + '</b>' + (GADMIN ? '. Calendario, atleti e risultati valgono per tutte le leghe.' : '.') + '</p>';
     h += ({ asta: aAsta, ris: aRis, squadre: aSquadre, gare: aGare, atleti: aAtleti, imp: aImp, leghe: aLeghe }[ui.adm] || aAsta)();
     return h + '</section>';
@@ -790,6 +893,12 @@
         '<div class="acts gap"><button type="button" class="mini" data-act="copylink">Copia link</button><a class="mini" href="https://wa.me/?text=' + encodeURIComponent('Ti invito nella lega «' + (S.league.name || BRAND) + '»' + ((S.league.name || BRAND).indexOf(BRAND) < 0 ? ' di ' + BRAND : '') + ', il fantasci della Coppa del Mondo. Apri il link, registrati con email e password e scegli la tua squadra: ' + inviteLink(e.code)) + '" target="_blank" rel="noopener">Invia su WhatsApp</a></div>' : '') +
       '<p class="hint gap">Con un nuovo codice quello vecchio, e il suo link, non valgono più; chi è già dentro resta.</p></div>';
     var byName = function (a, b) { return (a.name || '').localeCompare(b.name || ''); };
+    h += '<div class="lbl gap">Chi gioca ogni squadra</div>' + linksNote(true);
+    h += '<div class="panel gap"><div class="lbl">Squadre libere</div><div class="seg gap" role="group" aria-label="Chi può prendere una squadra libera">' +
+      '<button type="button" class="segb' + (lockTeams() ? '' : ' on') + '" data-act="lockteams" data-v="0" aria-pressed="' + !lockTeams() + '">Chi entra ne prende una</button>' +
+      '<button type="button" class="segb' + (lockTeams() ? ' on' : '') + '" data-act="lockteams" data-v="1" aria-pressed="' + lockTeams() + '">Le collego solo io</button></div>' +
+      '<p class="hint gap">' + (lockTeams() ? 'Chi entra con il codice aspetta che lo colleghi tu: nessuno può prendersi da solo una squadra libera, nemmeno con un secondo account.'
+        : 'Chi entra con il codice e non ha squadra può prendersi una squadra libera. Quando ognuno ha la sua, scegli «Le collego solo io»: così nessuno può prendersi le squadre che giochi tu per chi non ha l\'account.') + '</p></div>';
     h += '<div class="lbl gap">Squadre</div><p class="hint">Per ogni squadra scegli chi la gioca: se qualcuno ha preso la squadra sbagliata, la cambi da qui. Per chi gioca senza account scrivi il nome a mano: le sue formazioni le metti tu.</p><div class="tlist">' + S.teams.map(function (t) {
       var used = S.purchases.some(function (p) { return p.t === t.id; });
       var opts = '<option value="">' + (t.uid ? '— nessuno: libera la squadra —' : '— nessuno —') + '</option>' + members.slice().sort(byName).map(function (m) {
@@ -994,19 +1103,22 @@
   }
   // just inside the league: which team is yours? (the organiser can change it later)
   function vPick() {
-    var lgName = S.league.name || 'Lega', free = S.teams.filter(function (t) { return !t.uid; });
+    var lgName = S.league.name || 'Lega', free = S.teams.filter(function (t) { return !t.uid; }), can = free.length && !lockTeams();
     var h = brandHead(esc(lgName)) + '<main class="wrap"><section class="sec authbox"><div class="lbl">' + esc(lgName) + '</div><h1 class="h1">Quale squadra sei?</h1>' +
-      '<p class="sub">' + (free.length ? 'Scegli la tua squadra: la tieni per tutta la stagione. Se sbagli, chi organizza la lega la può cambiare.' : 'Tutte le squadre sono già prese: chiedi a chi organizza la lega di assegnartene una.') + '</p><div class="picks">';
+      '<p class="sub">' + (can ? 'Scegli la tua squadra: la tieni per tutta la stagione. Se sbagli, chi organizza la lega la può cambiare.'
+        : lockTeams() ? 'In questa lega le squadre le collega chi organizza: chiedi a <b>' + esc(organiserName()) + '</b> di collegarti alla tua (il tuo nome è <b>' + esc(STATE.user.name) + '</b>).'
+        : 'Tutte le squadre sono già prese: chiedi a <b>' + esc(organiserName()) + '</b> di collegarti alla tua (il tuo nome è <b>' + esc(STATE.user.name) + '</b>).') + '</p><div class="picks">';
     var guess = freeTeam(), named = guess && FS.norm(STATE.user.name) && (FS.norm(guess.owner) === FS.norm(STATE.user.name) || FS.norm(guess.name).indexOf(FS.norm(STATE.user.name)) >= 0);
     h += S.teams.map(function (t) {
       var who = ownerName(t);
       if (named && guess.id === t.id) who = (who ? who + ' · ' : '') + 'forse sei tu';
-      if (t.uid) return '<div class="pickrow taken"><span class="tn">' + esc(t.name) + '</span><span class="to">' + (who ? 'di ' + esc(who) : 'presa') + '</span></div>';
+      if (t.uid || !can) return '<div class="pickrow taken"><span class="tn">' + esc(t.name) + '</span><span class="to">' + (t.uid ? (who ? 'di ' + esc(who) : 'presa') : (who ? esc(who) : 'libera')) + '</span></div>';
       if (tmp.pickT === t.id) return '<div class="pickrow on"><span class="tn">' + esc(t.name) + '</span><span class="to">' + (who ? esc(who) : 'libera') + '</span>' +
         '<div class="confirm"><span>Confermi? Sei <b>' + esc(t.name) + '</b>.</span><button type="button" class="btn red" data-act="pickok" data-v="' + t.id + '"' + (tmp.busy ? ' disabled' : '') + '>Sì, sono io</button><button type="button" class="btn ghost" data-act="pickno">No</button></div></div>';
       return '<button type="button" class="pickrow" data-act="pick" data-v="' + t.id + '"><span class="tn">' + esc(t.name) + '</span><span class="to">' + (who ? esc(who) : 'libera') + '</span></button>';
     }).join('');
-    return h + '</div><div class="acts gap"><button type="button" class="linkb" data-act="pickskip">' + (free.length ? 'Scelgo più tardi' : 'Entra nella lega') + '</button></div></section></main>';
+    return h + '</div><div class="acts gap"><button type="button" class="linkb" data-act="pickskip">' + (can ? 'Scelgo più tardi' : 'Entra nella lega') + '</button></div>' +
+      '<p class="small muted gap">Sei entrato come ' + esc(STATE.user.email) + ' · <button type="button" class="linkb" data-act="logout">Esci</button></p></section></main>';
   }
   function vProfilo() {
     var u = STATE.user;
@@ -1043,8 +1155,8 @@
     if (!S) { APP.innerHTML = vLoading('Apro la lega…'); return; }
     if (needPick()) { APP.innerHTML = vPick(); return; }
     var tab = (!OWNER && ui.tab === 'gestione') ? 'classifica' : ui.tab;
-    var nav0 = D.querySelector('.tabs'), navX = nav0 ? nav0.scrollLeft : 0;
-    APP.innerHTML = header(tab) + '<main class="wrap" id="main">' + (STATE.error ? '<p class="why">' + esc(STATE.error) + '</p>' : '') + view(tab) + footer() + '</main>';
+    var nav0 = D.querySelector('.tabs'), navX = nav0 ? nav0.scrollLeft : 0, nt = tab === 'profilo' ? '' : noTeamNote();
+    APP.innerHTML = header(tab) + '<main class="wrap" id="main">' + (STATE.error ? '<p class="why">' + esc(STATE.error) + '</p>' : '') + (nt ? '<section class="sec">' + nt + '</section>' : '') + view(tab) + footer() + '</main>';
     keepTabs(navX);
     if (tab === 'gare' && !tmp.scrolled) {
       tmp.scrolled = true;
@@ -1059,17 +1171,33 @@
     if (!el) return;
     el.textContent = msg; el.hidden = false;
     clearTimeout(toastT);
-    toastT = setTimeout(function () { el.hidden = true; }, 4200);
+    // long messages (the reasons for a refusal) stay longer
+    toastT = setTimeout(function () { el.hidden = true; }, Math.max(4200, String(msg).length * 60));
   }
   function go(tab) { ui.tab = tab; saveUi(); render(); window.scrollTo(0, 0); }
   function openLineup(rid, tid) {
     var r = race(rid);
-    if (!r || lockOf(r) <= now()) { toast('Per questa gara la formazione è già chiusa.'); return false; }
+    if (!r || !luOpen(r)) { toast('Per questa gara la formazione è già chiusa.'); return false; }
+    if (!team(tid) || !canLineup(tid)) { toast(myTeam() ? 'Puoi mettere solo la formazione della tua squadra.' : 'Il tuo account non è collegato a nessuna squadra: vedi l\'avviso in alto.'); return false; }
     var e = C.eff[rid][tid], sel = {};
     e.t.forEach(function (a) { sel[a] = 'T'; });
     if (e.r) sel[e.r] = 'R';
     tmp.lu = { r: rid, t: tid, sel: sel };
     return true;
+  }
+  // the editor just opened: bring it into view (on phones it can be far down the page)
+  function toEditor(block) {
+    var el = D.getElementById('lued');
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: block || 'nearest' });
+  }
+  // why the database refused a lineup, as far as the page can tell
+  function luDenied(r, tid) {
+    var t = team(tid), e = entryOf(S.lid), dl = e && e.dbLocks ? e.dbLocks[r.id] : 0, org = organiserName();
+    if (OWNER) return 'Il database non ha accettato la formazione: le regole pubblicate in Firebase sono vecchie. Aggiornale come spiegato in Gestione.';
+    if (!t || t.uid !== ME) return 'Il database non ha accettato la formazione: la squadra non è collegata al tuo account. Chiedi a ' + org + ' di collegarti in Gestione → Squadre.';
+    if (!dl) return 'Il database non ha ancora l\'orario di chiusura di questa gara: avvisa ' + org + ', basta che apra il sito.';
+    if (dl <= now()) return 'Per il database questa gara è chiusa dalle ' + tlab(dl) + ': avvisa ' + org + ', basta che apra il sito per aggiornare gli orari.';
+    return 'Il database non ha accettato la formazione anche se la gara è aperta e la squadra è tua: avvisa ' + org + ', deve aggiornare le regole del database.';
   }
 
   // ---------- events
@@ -1079,17 +1207,18 @@
     var act = el.getAttribute('data-act'), v = el.getAttribute('data-v');
     var a, r, p, price, list, mt;
     switch (act) {
-      case 'tab': go(v); break;
+      // the Squadre tab opens on one's own team; changing page closes an open lineup
+      case 'tab': if (v === 'squadre') ui.team = null; tmp.lu = null; go(v); break;
       case 'team': ui.team = v; tmp.lu = null; go('squadre'); break;
       case 'tsel': ui.team = v; tmp.rel = null; tmp.lu = null; tmp.ren = null; saveUi(); render(); break;
       case 'ren': tmp.ren = v; render(); var ri = D.getElementById('trn'); if (ri) { ri.focus(); ri.select(); } break;
       case 'renno': tmp.ren = null; render(); break;
       case 'gf': ui.gf = v; saveUi(); render(); break;
       case 'cl': ui.cl = v; saveUi(); render(); if (el.classList.contains('cup')) window.scrollTo(0, 0); break;
-      case 'race': tmp.race = tmp.race === v ? null : v; render(); break;
+      case 'race': tmp.race = tmp.race === v ? null : v; tmp.lu = null; render(); break;
       case 'golu':
         mt = myTeam();
-        if (mt && canLineup(mt.id)) { ui.team = mt.id; openLineup(v, mt.id); go('squadre'); }
+        if (mt && canLineup(mt.id)) { ui.team = mt.id; var opened = openLineup(v, mt.id); go('squadre'); if (opened) toEditor('start'); }
         else { tmp.race = v; tmp.scrolled = true; go('gare'); var ge = D.getElementById('g-' + C.raceG[v]); if (ge) ge.scrollIntoView({ block: 'start' }); }
         break;
       case 'gores': tmp.rr = v; tmp.parsed = null; tmp.paste = ''; ui.adm = 'ris'; go('gestione'); break;
@@ -1101,13 +1230,14 @@
       case 'allraces': tmp.allRaces = !tmp.allRaces; render(); break;
       case 'claim':
         if (!ME || !S) break;
-        DBX.claimTeam(S.lid, v).then(function () { ui.team = v; saveUi(); toast('La squadra adesso è tua: puoi scegliere le formazioni.'); }, function (e) { toast(errText(e)); });
+        DBX.claimTeam(S.lid, v).then(function () { ui.team = v; saveUi(); toast('La squadra adesso è tua: puoi scegliere le formazioni.'); },
+          function (e) { toast(e && e.code === 'permission-denied' ? (lockTeams() ? 'In questa lega le squadre le collega ' + organiserName() + ': chiedi di collegarti alla tua.' : 'Questa squadra non è più libera, o hai già una squadra.') : errText(e)); });
         break;
       case 'unclaim': if (doOp({ k: 'teamSet', id: v, uid: '' })) render(); break;
       case 'pick': tmp.pickT = v; render(); break;
       case 'pickno': tmp.pickT = null; render(); break;
       case 'pickskip': if (S) tmp.skipPick[S.lid] = true; tmp.pickT = null; render(); window.scrollTo(0, 0); break;
-      case 'repick': if (S) tmp.skipPick[S.lid] = false; tmp.pickT = null; render(); window.scrollTo(0, 0); break;
+      case 'repick': if (S) tmp.skipPick[S.lid] = false; tmp.pickT = null; tmp.lu = null; render(); window.scrollTo(0, 0); break;
       case 'pickok':
         if (!S || tmp.busy) break;
         var pt = team(v);
@@ -1115,7 +1245,7 @@
         DBX.claimTeam(S.lid, v).then(function () {
           tmp.busy = false; tmp.pickT = null; ui.team = v; ui.tab = 'squadre'; saveUi(); render(); window.scrollTo(0, 0);
           toast('Fatto: sei «' + (pt ? pt.name : 'la tua squadra') + '». Qui scegli la formazione per ogni gara e puoi dare un nome alla squadra.');
-        }, function (e) { tmp.busy = false; tmp.pickT = null; toast(e && e.code === 'permission-denied' ? 'Questa squadra non è più libera: scegline un\'altra.' : errText(e)); render(); });
+        }, function (e) { tmp.busy = false; tmp.pickT = null; toast(e && e.code === 'permission-denied' ? (lockTeams() ? 'In questa lega le squadre le collega ' + organiserName() + ': chiedi di collegarti alla tua.' : 'Questa squadra non è più libera: scegline un\'altra.') : errText(e)); render(); });
         break;
       case 'allload': DBX.allLeagues().then(function (list) { tmp.all = list; render(); }, function (e) { toast(errText(e)); }); break;
       case 'lgjoin':
@@ -1124,8 +1254,23 @@
       case 'siteopen':
         DBX.setSite({ openLeagues: v === '1' }).then(function () { toast(v === '1' ? 'Adesso tutti gli iscritti possono creare una lega.' : 'Adesso le leghe le crei solo tu.'); }, function (e) { toast(errText(e)); });
         break;
-      case 'luopen': if (openLineup(v, ui.team && team(ui.team) ? ui.team : (myTeam() || S.teams[0]).id)) render(); break;
+      // "race|team": the team shown where the button is (Squadre, or the race in Gare)
+      case 'luopen':
+        var lq = String(v).split('|');
+        if (openLineup(lq[0], lq[1] || (ui.team && team(ui.team) ? ui.team : (myTeam() || S.teams[0]).id))) { render(); toEditor(); }
+        break;
       case 'luclose': tmp.lu = null; render(); break;
+      case 'allshut': tmp.allShut = !tmp.allShut; render(); break;
+      case 'lockteams':
+        var lk = v === '1';
+        var pl = doOp({ k: 'set', f: { lockTeams: lk } });
+        if (pl) pl.then(function (ok) { if (ok) toast(lk ? 'Fatto: le squadre libere le colleghi solo tu.' : 'Fatto: chi entra senza squadra può prendere una squadra libera.'); render(); });
+        break;
+      case 'rulescopy':
+        if (tmp.rulesTxt && navigator.clipboard) navigator.clipboard.writeText(tmp.rulesTxt).then(function () { toast('Regole copiate: incollale in Firebase → Firestore Database → Regole, al posto di quelle che ci sono, e premi Pubblica.'); },
+          function () { toast('Non riesco a copiarle: apri «Vedi le regole», seleziona tutto e copia.'); });
+        else toast('Non riesco a copiarle: apri «Vedi le regole», seleziona tutto e copia.');
+        break;
       case 'lusel':
         if (!tmp.lu) break;
         var parts = v.split('|'), aid = parts[0], want = parts[1], sel = tmp.lu.sel, max = S.league.starters || 2;
@@ -1137,14 +1282,15 @@
       case 'lusave':
         if (!tmp.lu || tmp.lu.busy) break;
         r = race(tmp.lu.r);
-        if (!r || lockOf(r) <= now()) { toast('Per questa gara la formazione è già chiusa.'); tmp.lu = null; render(); break; }
+        if (!r || !luOpen(r)) { toast('Per questa gara la formazione è già chiusa.'); tmp.lu = null; render(); break; }
         var luNow = tmp.lu, s2 = luNow.sel, tit = Object.keys(s2).filter(function (k) { return s2[k] === 'T'; }), rr = Object.keys(s2).filter(function (k) { return s2[k] === 'R'; })[0] || null;
-        var pr = doOp({ k: 'lu', r: r.id, t: luNow.t, lu: { t: tit, r: rr } }, { 'permission-denied': 'Il database non ha accettato la formazione: per questa gara risulta già chiusa. Se l\'orario della gara è appena cambiato, avvisa chi organizza la lega.' });
+        var pr = doOp({ k: 'lu', r: r.id, t: luNow.t, lu: { t: tit, r: rr } }, { 'permission-denied': luDenied(r, luNow.t) });
         if (pr) {
-          luNow.busy = true; render();
+          luNow.busy = true; luNow.err = ''; render();
           pr.then(function (ok) {
             luNow.busy = false;
-            if (ok) { if (tmp.lu === luNow) tmp.lu = null; toast('Formazione per ' + r.t + ' ' + r.v + ' salvata.'); }
+            if (ok) { if (tmp.lu === luNow) tmp.lu = null; toast((OWNER && (!myTeam() || myTeam().id !== luNow.t) ? tname(luNow.t) + ': f' : 'F') + 'ormazione per ' + r.t + ' ' + r.v + ' salvata.'); }
+            else luNow.err = tmp.lastErr;
             render();
           });
         }

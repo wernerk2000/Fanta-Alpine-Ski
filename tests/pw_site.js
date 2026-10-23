@@ -147,7 +147,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   await logout(); await login('nico@example.it', 'nicopass');
   await click('#tab-squadre'); await wait(80);
   ok(/La tua squadra/.test(await txt()), 'Squadre opens on Nico\'s own team after login');
-  await click('[data-act="luopen"][data-v="m01"]');
+  await click('[data-act="luopen"][data-v^="m01|"]');
   // the editor starts from the automatic lineup (the two best by price), so the reserve goes first to free a starter slot
   await click('[data-act="lusel"][data-v="m-marco-odermatt|R"]');
   await click('[data-act="lusel"][data-v="m-loic-meillard|T"]');
@@ -160,7 +160,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   // 6. after the deadline (Sunday 25 Oct, 09:00) the lineup is closed
   await page.clock.setFixedTime(new Date('2026-10-25T08:30:00Z'));
   await click('#tab-classifica'); await click('#tab-squadre'); await wait(80);
-  ok(!(await page.$('[data-act="luopen"][data-v="m01"]')), 'no editing after the deadline');
+  ok(!(await page.$('[data-act="luopen"][data-v^="m01|"]')), 'no editing after the deadline');
   const denied = await page.evaluate(t => window.DB.op({ k: 'lu', lg: Object.keys(window.__mock.store.leagues)[0], r: 'm01', t: t, lu: { t: ['m-marco-odermatt'], r: null } }).then(() => 'saved', e => e.code), nicoTeam);
   ok(denied === 'permission-denied', 'database refuses a late lineup');
 
@@ -267,7 +267,12 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
   ok(Object.values(L.members).some(m => m.name === 'Dori') && /Quale squadra sei/.test(await txt()), 'Dori is in the league right after the username, asked for her team');
   await page.screenshot({ path: OUT + 'site_invite.png' });
   await click('[data-act="pickskip"]'); await wait(80);
-  ok(/Non hai ancora una squadra/.test(await txt()), 'skipping: the league opens, with a reminder');
+  ok(/Il tuo account non è collegato a nessuna squadra/.test(await page.textContent('#noteam')) && await page.$('#noteam [data-act="repick"]'), 'skipping: the league opens, with the notice and the way to pick a team');
+  await click('#tab-gare'); await wait(60);
+  ok(await page.$('#noteam'), 'the notice is on every page');
+  await click('#noteam [data-act="repick"]'); await wait(60);
+  ok(/Quale squadra sei/.test(await txt()), 'from the notice back to the team picker');
+  await click('[data-act="pickskip"]'); await wait(60);
 
   // 10. a player names his own team, and only his own
   await logout(); await login('nico@example.it', 'nicopass');
