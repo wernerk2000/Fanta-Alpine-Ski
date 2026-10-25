@@ -845,7 +845,9 @@
     P.list.forEach(function (x) { inList[x[0]] = 1; });
     var cand = S.athletes.filter(function (a) { return a.g === r.g && !a.hide && !inList[a.id]; }).sort(function (a, b) { return a.n.localeCompare(b.n); });
     var rows = P.list.slice().sort(function (a, b) { return a[1] - b[1]; });
-    var h = '<div><div class="lbl">Anteprima · ' + rows.length + (rows.length === 1 ? ' atleta' : ' atleti') + '</div>';
+    var h = '<div id="rprev"><div class="lbl">Anteprima · ' + rows.length + (rows.length === 1 ? ' atleta' : ' atleti') + '</div>';
+    if (P.file) h += '<p class="small muted">Dal PDF ' + esc(P.file) + ' · ' + esc(raceLabel(r.g, r.t, r.d, r.v)) + '</p>';
+    if (P.note) h += '<p class="why">' + esc(P.note) + '</p>';
     if (!P.sure) h += '<p class="why">Alcune posizioni potrebbero essere sbagliate: controlla i numeri prima di salvare.</p>';
     var noBib = rows.filter(function (x) { return !x[2]; }).length;
     if (L.bib && noBib) h += '<p class="why">' + noBib + (noBib === 1 ? ' atleta senza pettorale' : ' atleti senza pettorale') + ': senza pettorale niente bonus partenza.</p>';
@@ -887,6 +889,82 @@
     h += '<div class="acts gap"><button type="button" class="btn red" data-act="psave"' + (rows.length ? '' : ' disabled') + '>Usa questi risultati</button></div></div>';
     return h;
   }
+  // ---------- results from the FIS PDF, read in the browser with PDF.js (vendor/pdfjs, loaded only when needed)
+  var pdfLib = null;
+  function loadPdfLib() {
+    if (!pdfLib) {
+      var base = D.baseURI;
+      // import() written through Function: a browser without it fails here, not on the whole page
+      pdfLib = Promise.resolve().then(function () { return (new Function('u', 'return import(u)'))(new URL('vendor/pdfjs/pdf.min.js', base).href); })
+        .then(function (m) { m.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.js', base).href; return m; });
+      pdfLib.catch(function () { pdfLib = null; });
+    }
+    return pdfLib;
+  }
+  function fileBuf(f) {
+    return new Promise(function (ok, ko) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = ko; fr.readAsArrayBuffer(f); });
+  }
+  // the PDF keeps its text column by column: rows are rebuilt from where each piece sits on the page, left to right
+  function pdfRows(items) {
+    var rows = [];
+    items.forEach(function (it) {
+      var s = (it.str || '').trim();
+      if (!s || !it.transform) return;
+      var x = it.transform[4], y = it.transform[5], tol = Math.max(2, (Math.abs(it.transform[3]) || it.height || 8) * 0.4), row = null;
+      for (var i = 0; i < rows.length; i++) if (Math.abs(rows[i].y - y) <= tol) { row = rows[i]; break; }
+      if (!row) { row = { y: y, it: [] }; rows.push(row); }
+      row.it.push({ x: x, s: s });
+    });
+    return rows.sort(function (a, b) { return b.y - a.y; }).map(function (r) {
+      return r.it.sort(function (a, b) { return a.x - b.x; }).map(function (i) { return i.s; }).join(' ');
+    });
+  }
+  // page footers out; after the results, the jury and course data are not read (their names are not athletes)
+  function pdfClean(lines) {
+    var out = [], rows = false;
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      if (/^\d{1,3}\s+\d{1,3}\s+\d{4,}\s+\S/.test(l)) rows = true;
+      if (rows && /^(Jury|Technical Data|Race Information|Forerunners|Legend|Weather|Conditions on course)\b/i.test(l)) break;
+      if (/Page\s+\d+\s*\/\s*\d+|^Data Processing|^Generation date|fis-ski\.com/i.test(l)) continue;
+      out.push(l);
+    }
+    return out.join('\n');
+  }
+  function pdfText(buf) {
+    return loadPdfLib().then(function (lib) { return lib.getDocument({ data: new Uint8Array(buf), isEvalSupported: false }).promise; }).then(function (doc) {
+      var jobs = [];
+      for (var p = 1; p <= doc.numPages; p++) jobs.push(doc.getPage(p).then(function (pg) { return pg.getTextContent(); }));
+      return Promise.all(jobs);
+    }).then(function (pages) {
+      var lines = [];
+      pages.forEach(function (tc) { pdfRows(tc.items).forEach(function (l) { lines.push(l); }); });
+      return pdfClean(lines);
+    });
+  }
+  // which race the PDF is for, from its heading: "1st Women's Giant Slalom … SAT 24 OCT 2026"
+  var MON3 = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
+  function pdfRace(text) {
+    var head = text.slice(0, 700), m = /\b(\d{1,2})\s+(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\s+(\d{4})\b/i.exec(head);
+    var g = /\b(women|ladies)\b/i.test(head) ? 'F' : /\bmen\b/i.test(head) ? 'M' : null;
+    var t = /giant\s+slalom/i.test(head) ? 'GS' : /super[\s-]?g\b/i.test(head) ? 'SG' : /downhill/i.test(head) ? 'DH' : /\bslalom\b/i.test(head) ? 'SL' : null;
+    var d = m ? m[3] + '-' + pad(MON3[m[2].toUpperCase()]) + '-' + pad(+m[1]) : null;
+    return { g: g, t: t, d: d, race: g && t && d ? S.races.filter(function (x) { return x.g === g && x.t === t && x.d === d; })[0] || null : null };
+  }
+  function raceLabel(g, t, d, v) { return DISC[t] + (g === 'F' ? ' femminile' : ' maschile') + (v ? ' di ' + v : '') + (d ? ', ' + dlab(d, true) : ''); }
+  // a results list (pasted, or the text of the PDF) read for race r into the preview
+  function readResults(r, text, src) {
+    var pr = FS.parseResults(text, S.athletes.filter(function (x) { return x.g === r.g && !x.hide; }), { runs: FS.CAT[r.t] === 'T' });
+    var ranked = {}, ro = rosteredAll(r), stt = {}, nbs = {}, pasted = !!text.trim();
+    pr.list.forEach(function (x) { ranked[x[0]] = 1; });
+    Object.keys(ro).forEach(function (aid) {
+      if (ranked[aid]) return;
+      stt[aid] = pr.nf.indexOf(aid) >= 0 ? 'dnf' : pr.nq.indexOf(aid) >= 0 ? 'nc' : pasted && (pr.ns.indexOf(aid) >= 0 || pr.seen.indexOf(aid) < 0) ? 'dns' : 'nc';
+      if (pr.sbib[aid]) nbs[aid] = pr.sbib[aid];
+    });
+    tmp.parsed = { r: r.id, list: pr.list, st: stt, nb: nbs, sure: pr.sure, src: src || 'incollati' };
+    return pr;
+  }
   function aRis() {
     if (!tmp.rr || !race(tmp.rr)) tmp.rr = defaultRace();
     var r = race(tmp.rr), res = S.results[r.id];
@@ -895,7 +973,9 @@
       (r.st === 'canc' ? '<button type="button" class="mini" data-act="uncanc">Ripristina gara</button>' : '<button type="button" class="mini" data-act="canc">Segna come annullata</button>') +
       (res ? '<button type="button" class="mini" data-act="resdel">Cancella risultati</button>' : '') + '</span></div></div>';
     if (r.st !== 'canc') {
-      h += '<label class="field" for="rpaste"><span>Incolla la classifica completa, dalla pagina dei risultati FIS o da un sito di risultati</span><textarea id="rpaste" class="in" placeholder="1   3   512269   ODERMATT Marco   SUI   1:15.33 …">' + esc(tmp.paste) + '</textarea></label>';
+      h += '<div class="panel"><div class="lbl">PDF dei risultati FIS</div><p class="small muted gap">Scarica dal sito della FIS il PDF dei risultati della gara e caricalo qui: il sito legge classifica, pettorali, manche, chi è uscito e chi non si è qualificato, e sceglie da solo la gara. Poi controlli l\'anteprima e salvi.</p>' +
+        '<label class="field gap" for="rpdf"><span>' + (tmp.pdfBusy ? 'Leggo ' + esc(tmp.pdfBusy) + '…' : 'Carica il PDF') + '</span><input id="rpdf" class="in" type="file" accept="application/pdf,.pdf" data-chg="rpdf"' + (tmp.pdfBusy ? ' disabled' : '') + '></label></div>';
+      h += '<label class="field" for="rpaste"><span>Oppure incolla la classifica completa, dalla pagina dei risultati FIS o da un sito di risultati</span><textarea id="rpaste" class="in" placeholder="1   3   512269   ODERMATT Marco   SUI   1:15.33 …">' + esc(tmp.paste) + '</textarea></label>';
       h += '<div class="acts"><button type="button" class="btn" data-act="parse">Leggi classifica</button><span class="hint">Riconosce gli atleti del listone con posizione, pettorale e tempi di manche, e chi è uscito o non è partito. Controlla l\'anteprima prima di usarla.</span></div>';
       h += prevBlock(r);
     }
@@ -1357,16 +1437,7 @@
       case 'parse':
         r = race(tmp.rr); if (!r) break;
         tmp.paste = val('rpaste');
-        var tech = FS.CAT[r.t] === 'T';
-        var pr = FS.parseResults(tmp.paste, S.athletes.filter(function (x) { return x.g === r.g && !x.hide; }), { runs: tech });
-        var ranked = {}, ro = rosteredAll(r), stt = {}, nbs = {}, pasted = !!tmp.paste.trim();
-        pr.list.forEach(function (x) { ranked[x[0]] = 1; });
-        Object.keys(ro).forEach(function (aid) {
-          if (ranked[aid]) return;
-          stt[aid] = pr.nf.indexOf(aid) >= 0 ? 'dnf' : pr.nq.indexOf(aid) >= 0 ? 'nc' : pasted && (pr.ns.indexOf(aid) >= 0 || pr.seen.indexOf(aid) < 0) ? 'dns' : 'nc';
-          if (pr.sbib[aid]) nbs[aid] = pr.sbib[aid];
-        });
-        tmp.parsed = { r: r.id, list: pr.list, st: stt, nb: nbs, sure: pr.sure, src: 'incollati' };
+        var tech = FS.CAT[r.t] === 'T', pr = readResults(r, tmp.paste, 'incollati');
         toast(pr.matched ? pr.matched + ' atleti riconosciuti' + (tech ? (pr.runs ? ', tempi di manche per ' + pr.runs : ', tempi di manche non trovati') : '') + '.' : 'Nessun atleta riconosciuto: controlla di aver incollato la classifica di questa gara.');
         render();
         break;
@@ -1543,6 +1614,31 @@
       else render();
     }
     else if (c === 'rsel') { tmp.rr = el.value; tmp.parsed = null; tmp.paste = ''; render(); }
+    // the FIS results PDF: read in the browser, the race chosen from its heading, then the same preview as pasted text
+    else if (c === 'rpdf') {
+      var pf = el.files && el.files[0];
+      if (!pf || tmp.pdfBusy) return;
+      tmp.pdfBusy = pf.name; render();
+      fileBuf(pf).then(pdfText).then(function (txt) {
+        tmp.pdfBusy = false;
+        if (!/[a-z]{3}/i.test(txt)) { toast('Nel PDF non trovo testo: carica il PDF dei risultati scaricato dal sito della FIS.'); render(); return; }
+        var w = pdfRace(txt), note = '';
+        if (w.race) tmp.rr = w.race.id;
+        else if (w.g && w.t && w.d) note = 'Il PDF è del ' + raceLabel(w.g, w.t, w.d).toLowerCase() + ', che nel calendario non c\'è: salva solo se la gara scelta qui sopra è proprio quella.';
+        else note = 'Dal PDF non capisco di che gara si tratta: salva solo se la gara scelta qui sopra è quella giusta.';
+        var rp = race(tmp.rr);
+        tmp.paste = txt;
+        var pr = readResults(rp, txt, 'PDF FIS');
+        tmp.parsed.file = pf.name; tmp.parsed.note = note;
+        var parts = [pr.matched + ' atleti del listone in classifica'];
+        if (pr.nf.length) parts.push(pr.nf.length + (pr.nf.length === 1 ? ' uscito' : ' usciti'));
+        if (pr.nq.length && FS.CAT[rp.t] === 'T') parts.push(pr.nq.length + ' non qualificati');
+        toast(pr.matched ? 'PDF letto: ' + raceLabel(rp.g, rp.t, rp.d, rp.v) + '. ' + parts.join(', ') + '. Controlla l\'anteprima e premi «Usa questi risultati».' : 'Nel PDF non trovo atleti del listone: è il PDF dei risultati di questa gara?');
+        render();
+        var pv = D.getElementById('rprev'); if (pv && pv.scrollIntoView) pv.scrollIntoView({ block: 'start' });
+      }, function () { tmp.pdfBusy = false; toast('Non riesco a leggere questo PDF: riprova, oppure incolla la classifica qui sotto.'); render(); });
+      el.value = '';
+    }
     else if (c === 'esel') { tmp.er = el.value; render(); }
     else if (c === 'impf') {
       var file = el.files && el.files[0];

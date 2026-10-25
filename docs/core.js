@@ -427,7 +427,8 @@ var FS = (function () {
   }
   function words(s) { return norm(s).split(/[^a-z0-9]+/).filter(Boolean); }
   function isInt(t) { return /^\d+$/.test(t); }
-  function tokens(s) { return norm(s).match(/[a-z]+|\d+(?:[.:,]\d+)*/g) || []; }
+  // initials written with dots stay one word: "HURT A.J." gives "aj", as in the listone ("AJ Hurt")
+  function tokens(s) { return norm(s).replace(/\b([a-z])\.\s?([a-z])\b\.?/g, '$1$2').match(/[a-z]+|\d+(?:[.:,]\d+)*/g) || []; }
   function locate(toks, a) {
     var w = words(a.n), need = {};
     w.forEach(function (x) { need[x] = 1; });
@@ -458,14 +459,15 @@ var FS = (function () {
     }
     return { list: list, ts: ts, used: used };
   }
-  var SECTION = /did not start|did not finish|did not qualify|disqualified|non partit|non arrivat|non qualificat|squalificat|ritirat|\bdnf\d?\b|\bdsq\d?\b|\bdns\d?\b|\bdnq\d?\b/gi;
-  var NOSTART = /did not start|non partit|\bdns\d?\b/i;
+  var SECTION = /did not start|not permitted to start|did not finish|did not qualify|disqualified|non partit|non arrivat|non qualificat|squalificat|ritirat|\bdnf\d?\b|\bdsq\d?\b|\bdns\d?\b|\bdnq\d?\b/gi;
+  var NOSTART = /did not start|not permitted to start|non partit|\bdns\d?\b/i;
   var NOQUAL = /did not qualify|non qualificat|\bdnq\d?\b/i;
   var SECOND = /^\w{0,2}\W{1,3}(?:in\s+|nella\s+|the\s+|for\s+)?(?:2nd|second|2ª|2a|2°|seconda)/i;
   // 'ns' did not start the race, 'nq' did not qualify for run 2, 'nf' out of the race (did not finish, disqualified, did not start run 2)
   function sectionKind(m, after) {
     if (NOQUAL.test(m)) return 'nq';
-    if (NOSTART.test(m)) return /2$/.test(m) || SECOND.test(after) ? 'nf' : 'ns';
+    // not starting run 2 is going out of the race ("DID NOT START RUN 2" in the FIS PDF, "Did not start 2nd run" on the website)
+    if (NOSTART.test(m)) return /2$/.test(m) || SECOND.test(after) || /^\W*(?:run|manche)\s*2\b/i.test(after) ? 'nf' : 'ns';
     return 'nf';
   }
   // bib of a row without a place: the number right before the FIS code, or the number right before the name

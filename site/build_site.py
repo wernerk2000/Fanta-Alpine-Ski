@@ -49,6 +49,9 @@ put('config.js', 'window.FS_CONFIG = ' + json.dumps({'firebase': cfg}, ensure_as
 put('firestore.rules', (SITE / 'firestore.rules').read_text(encoding='utf-8'))
 # the same rules as plain text: browsers show it instead of downloading it (the organiser copies it from there)
 put('firestore-rules.txt', (SITE / 'firestore.rules').read_text(encoding='utf-8'))
+# libraries served with the site (PDF.js reads the FIS results PDF in Gestione → Risultati)
+if (SITE / 'vendor').exists():
+    shutil.copytree(SITE / 'vendor', DIST / 'vendor')
 put('.nojekyll', '')
 cname = SITE / 'CNAME'
 if cname.exists():

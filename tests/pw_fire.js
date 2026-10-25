@@ -487,9 +487,65 @@ Did not finish 1st run
   await page.context().close();
 }
 
+// Flow D: the organiser uploads the FIS results PDF (Sölden women's giant slalom); the site reads it in the browser,
+// chooses the race from its heading, and the saved results equal the official ones (docs/data/results.json, loaded by the
+// results task from the FIS); DNF and DNQ take the malus of their bib.
+const PDF = SHOTS + 'pdf/f01.pdf';
+async function flowD(browser) {
+  console.log('--- D: results from the FIS PDF');
+  if (!fs.existsSync(PDF)) { console.log('     no PDF at ' + PDF + ': skipped'); return; }
+  const ref = JSON.parse(fs.readFileSync('/home/claude/fantaski/docs/data/results.json', 'utf8')).results.f01;
+  const page = await newPage(browser), H = helpers(page);
+  await page.clock.setFixedTime(new Date('2026-10-25T18:00:00Z'));
+  await page.goto('http://site.test/', { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('form[data-form="login"]');
+  await H.register('Werner', 'werner@example.it', 'segreta1');
+  await H.click('[data-act="claimadmin"]'); await H.wait(300);
+  await page.fill('#lgn', 'Ski Team Paganella'); await page.fill('#lgt', '2');
+  await H.click('form[data-form="create"] button[type="submit"]'); await H.wait(500);
+  let D = await H.docs();
+  const lid = (await H.lids())[0];
+  const teamId = n => Object.keys(D).find(k => k.startsWith('leagues/' + lid + '/teams/') && D[k].name === n).split('/').pop();
+  const T1 = teamId('Squadra 1'), T2 = teamId('Squadra 2');
+  const R = { [T1]: ['f-julia-scheib', 'f-marta-bassino', 'f-laura-pirovano'], [T2]: ['f-paula-moltzan', 'f-stephanie-brunner', 'f-aj-hurt'] };
+  await page.evaluate(([l, R]) => {
+    let i = 0;
+    return Promise.all([].concat(...Object.keys(R).map(t => R[t].map(a => window.DB.op({ k: 'buy', lg: l, id: 'p' + (i++), a: a, t: t, price: 5, from: '2026-10-01T00:00:00Z' })))));
+  }, [lid, R]);
+  await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="ris"]'); await H.wait(150);
+  ok(await page.inputValue('#rsel') !== 'f01' && await page.$('#rpdf'), 'Risultati: another race selected, the PDF field there');
+  // a file that is not a PDF
+  const bad = SHOTS + 'pdf/not-a-pdf.pdf';
+  fs.writeFileSync(bad, 'questo non è un pdf');
+  await page.setInputFiles('#rpdf', bad);
+  await page.waitForFunction(() => /Non riesco a leggere questo PDF/.test((document.getElementById('fs-toast') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => null);
+  ok(/Non riesco a leggere questo PDF/.test(await page.textContent('#fs-toast')), 'a file that is not a PDF: said so');
+  await page.setInputFiles('#rpdf', PDF);
+  await page.waitForFunction(() => /PDF letto/.test((document.getElementById('fs-toast') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => null);
+  const toastTxt = await page.textContent('#fs-toast');
+  ok(/PDF letto: Gigante femminile di Sölden, sab 24 ott\. 30 atleti del listone in classifica, 2 usciti, 23 non qualificati/.test(toastTxt), 'PDF read: ' + toastTxt);
+  ok(await page.inputValue('#rsel') === 'f01' && /Dal PDF f01\.pdf/.test(await page.textContent('#rprev')), 'the race is chosen from the PDF heading: f01');
+  const unr = await page.textContent('#rprev');
+  ok(/Julia Scheib/.test(unr) && await page.inputValue('#pn-f-julia-scheib') === '2' && await page.inputValue('#pn-f-marta-bassino') === '28' && await page.inputValue('#pn-f-laura-pirovano') === '31' && await page.inputValue('#pn-f-stephanie-brunner') === '19',
+    'preview: who went out and who did not qualify, with their bibs');
+  await page.screenshot({ path: SHOTS + 'd_pdf_preview.png', fullPage: true });
+  await H.click('[data-act="psave"]'); await H.wait(500);
+  const res = JSON.parse((await H.docs())['results/f01'].json);
+  ok(JSON.stringify(res.list) === JSON.stringify(ref.list), 'saved list identical to the official results: 30 athletes, places, bibs, both runs');
+  const has = (arr, a, b) => arr.some(x => Array.isArray(x) && x[0] === a && x[1] === b);
+  ok(has(res.dnf, 'f-julia-scheib', 2) && has(res.nc, 'f-marta-bassino', 28) && has(res.nc, 'f-laura-pirovano', 31) && has(res.nc, 'f-stephanie-brunner', 19) && res.src === 'PDF FIS',
+    'DNF and DNQ saved with their bibs, source «PDF FIS»');
+  await H.click('#tab-gare'); await H.wait(100);
+  if (!(await page.$('.rdet'))) { await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150); }
+  const rd = await page.textContent('.rdet');
+  ok(/Scheib · uscito · −10/.test(rd) && /Bassino · non qualificato · −5/.test(rd) && /Brunner · non qualificato · −5/.test(rd) && /Moltzan · 1°/.test(rd), 'race page: Scheib out (bib 2) −10, Bassino (28) and Brunner (19) not qualified −5, Moltzan 1st');
+  ok(!page.errors.length, 'no page errors ' + JSON.stringify(page.errors));
+  await page.context().close();
+}
+
 (async () => {
   const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
-  try { await flowA(browser); await flowB(browser); await flowC(browser); }
+  try { await flowA(browser); await flowB(browser); await flowC(browser); await flowD(browser); }
   catch (e) { console.error('FAIL', e); process.exitCode = 1; }
   await browser.close();
 })();
