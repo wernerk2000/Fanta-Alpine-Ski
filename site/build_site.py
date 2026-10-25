@@ -40,6 +40,7 @@ def put(name, text):
 
 put('core.js', (ROOT / 'src' / 'core.js').read_text(encoding='utf-8'))
 put('app.js', (SITE / 'src' / 'app.js').read_text(encoding='utf-8'))
+put('pdftext.js', (SITE / 'src' / 'pdftext.js').read_text(encoding='utf-8'))
 put('db.js', (SITE / 'src' / ('mockdb.js' if mock else 'db.js')).read_text(encoding='utf-8'))
 put('style.css', (ROOT / 'src' / 'style.css').read_text(encoding='utf-8') + '\n' + (SITE / 'src' / 'site.css').read_text(encoding='utf-8'))
 put('defaults.js', 'window.FS_DEFAULTS = ' + json.dumps(defaults, ensure_ascii=False) + ';\n')
@@ -90,6 +91,7 @@ put('index.html', f"""<!doctype html>
 <script src="defaults.js?v={v}"></script>
 <script src="config.js?v={v}"></script>
 <script{module} src="db.js?v={v}"></script>
+<script src="pdftext.js?v={v}" defer></script>
 <script src="app.js?v={v}" defer></script>
 </body>
 </html>

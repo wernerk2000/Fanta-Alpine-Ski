@@ -17,9 +17,14 @@ gli atleti e i risultati.
 - `docs/` — il sito pubblicato (GitHub Pages). `docs/data/` contiene listone, calendario e risultati: li aggiornano le attività automatiche.
 - `src/core.js` — motore dei punti, comune al sito e alla pagina su Claude. `src/app.js` e `src/style.css` — la pagina su Claude.
 - `site/src/` — il sito: `app.js` (interfaccia), `db.js` (Firebase), `mockdb.js` (database finto per le prove), `site.css`.
-- `site/vendor/pdfjs/` — PDF.js (Mozilla, licenza Apache 2.0): legge nel browser il PDF dei risultati FIS caricato in
-  Gestione → Risultati. Il sito ricostruisce le righe dalla posizione del testo, sceglie la gara dall'intestazione del PDF
-  (es. «Women's Giant Slalom … SAT 24 OCT 2026») e usa lo stesso lettore della classifica incollata.
+- `site/src/pdftext.js` — il lettore di PDF del sito, in JavaScript semplice (ES5) perché funzioni su qualunque telefono:
+  legge il testo e la sua posizione dal PDF dei risultati FIS caricato in Gestione → Risultati (oggetti, flussi
+  compressi, font e mappe ToUnicode). Il sito ricostruisce le righe dalla posizione del testo, sceglie la gara
+  dall'intestazione del PDF (es. «Women's Giant Slalom … SAT 24 OCT 2026») e usa lo stesso lettore della classifica
+  incollata. `tests/pdftext_test.mjs` lo confronta riga per riga con PDF.js e con i risultati ufficiali.
+- `site/vendor/pdfjs/` — PDF.js (Mozilla, licenza Apache 2.0), usato solo se il lettore del sito non trova la
+  classifica in un PDF; chiede un browser recente (ES2022: su iPhone iOS 16.4 o successivo). Se nessuno dei due legge
+  il file, il pannello mostra una riga con il motivo e il browser usato.
 - `site/firestore.rules` — regole di sicurezza del database, da incollare in Firebase → Firestore → Regole.
   Il sito controlla che quelle pubblicate siano le attuali (le nuove permettono di leggere `config/rulesAAAAMMGG`):
   se sono vecchie, chi organizza vede un avviso con il pulsante per copiarle. Quando cambiano, cambia anche quel nome

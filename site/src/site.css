@@ -58,3 +58,6 @@ button.pickrow:hover .tn { text-decoration: underline; text-underline-offset: 3p
 .mini.go { color: var(--tech); border-color: var(--tech); font-weight: 600; }
 .lued { scroll-margin-top: 130px; scroll-margin-bottom: 20px; }
 .tdact { margin-top: 6px; }
+
+/* the PDF error line carries long addresses and the browser name: wrapped anywhere on a narrow phone */
+#pdferr { overflow-wrap: anywhere; word-break: break-word; }

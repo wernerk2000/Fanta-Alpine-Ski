@@ -890,19 +890,26 @@
     return h;
   }
   // ---------- results from the FIS PDF, read in the browser with PDF.js (vendor/pdfjs, loaded only when needed)
-  var pdfLib = null;
+  var pdfLib = null, pdfTry = 0;
   function loadPdfLib() {
     if (!pdfLib) {
-      var base = D.baseURI;
+      // a module that failed to load stays failed for the page (a weak connection once is enough):
+      // a retry asks for it at a new address
+      var base = D.baseURI, q = pdfTry++ ? '?r=' + pdfTry : '';
       // import() written through Function: a browser without it fails here, not on the whole page
-      pdfLib = Promise.resolve().then(function () { return (new Function('u', 'return import(u)'))(new URL('vendor/pdfjs/pdf.min.js', base).href); })
+      pdfLib = Promise.resolve().then(function () { return (new Function('u', 'return import(u)'))(new URL('vendor/pdfjs/pdf.min.js' + q, base).href); })
         .then(function (m) { m.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.js', base).href; return m; });
       pdfLib.catch(function () { pdfLib = null; });
     }
     return pdfLib;
   }
   function fileBuf(f) {
-    return new Promise(function (ok, ko) { var fr = new FileReader(); fr.onload = function () { ok(fr.result); }; fr.onerror = ko; fr.readAsArrayBuffer(f); });
+    return new Promise(function (ok, ko) {
+      var fr = new FileReader();
+      fr.onload = function () { ok(fr.result); };
+      fr.onerror = function () { var e = fr.error; ko(new Error('il browser non apre il file' + (e ? ' (' + (e.name || '') + (e.message ? ': ' + e.message : '') + ')' : ''))); };
+      fr.readAsArrayBuffer(f);
+    });
   }
   // the PDF keeps its text column by column: rows are rebuilt from where each piece sits on the page, left to right
   function pdfRows(items) {
@@ -942,6 +949,23 @@
       return pdfClean(lines);
     });
   }
+  // the text of the PDF: first with the site's own reader (pdftext.js, plain ES5, any phone), then with PDF.js
+  // when that fails or finds no rows of a classification; both failing, the error says what each one met
+  var RANKROW = /^\d{1,3}\s+\d{1,3}\s+\d{4,}\s+\S/m;
+  function readPdf(buf) {
+    var own = null, ownErr = '';
+    try {
+      if (!window.PDFText) throw new Error('non caricato');
+      own = pdfClean([].concat.apply([], window.PDFText.read(buf).map(pdfRows)));
+    } catch (e) { ownErr = (e && e.message) || String(e); }
+    if (own && RANKROW.test(own)) return Promise.resolve(own);
+    return pdfText(buf).then(null, function (e) {
+      if (own) return own;
+      var er = new Error('pdf');
+      er.detail = 'lettore del sito: ' + (ownErr || 'nessun testo') + ' · PDF.js: ' + ((e && e.message) || String(e));
+      throw er;
+    });
+  }
   // which race the PDF is for, from its heading: "1st Women's Giant Slalom … SAT 24 OCT 2026"
   var MON3 = { JAN: 1, FEB: 2, MAR: 3, APR: 4, MAY: 5, JUN: 6, JUL: 7, AUG: 8, SEP: 9, OCT: 10, NOV: 11, DEC: 12 };
   function pdfRace(text) {
@@ -974,7 +998,8 @@
       (res ? '<button type="button" class="mini" data-act="resdel">Cancella risultati</button>' : '') + '</span></div></div>';
     if (r.st !== 'canc') {
       h += '<div class="panel"><div class="lbl">PDF dei risultati FIS</div><p class="small muted gap">Scarica dal sito della FIS il PDF dei risultati della gara e caricalo qui: il sito legge classifica, pettorali, manche, chi è uscito e chi non si è qualificato, e sceglie da solo la gara. Poi controlli l\'anteprima e salvi.</p>' +
-        '<label class="field gap" for="rpdf"><span>' + (tmp.pdfBusy ? 'Leggo ' + esc(tmp.pdfBusy) + '…' : 'Carica il PDF') + '</span><input id="rpdf" class="in" type="file" accept="application/pdf,.pdf" data-chg="rpdf"' + (tmp.pdfBusy ? ' disabled' : '') + '></label></div>';
+        '<label class="field gap" for="rpdf"><span>' + (tmp.pdfBusy ? 'Leggo ' + esc(tmp.pdfBusy) + '…' : 'Carica il PDF') + '</span><input id="rpdf" class="in" type="file" accept="application/pdf,.pdf" data-chg="rpdf"' + (tmp.pdfBusy ? ' disabled' : '') + '></label>' +
+        (tmp.pdfErr ? '<p class="why gap" id="pdferr">Non riesco a leggere il PDF. Se succede ancora, manda questa riga a chi ti aiuta con il sito: <span class="small">' + esc(tmp.pdfErr) + '</span></p>' : '') + '</div>';
       h += '<label class="field" for="rpaste"><span>Oppure incolla la classifica completa, dalla pagina dei risultati FIS o da un sito di risultati</span><textarea id="rpaste" class="in" placeholder="1   3   512269   ODERMATT Marco   SUI   1:15.33 …">' + esc(tmp.paste) + '</textarea></label>';
       h += '<div class="acts"><button type="button" class="btn" data-act="parse">Leggi classifica</button><span class="hint">Riconosce gli atleti del listone con posizione, pettorale e tempi di manche, e chi è uscito o non è partito. Controlla l\'anteprima prima di usarla.</span></div>';
       h += prevBlock(r);
@@ -1613,13 +1638,13 @@
       if (pa) pa.then(function (ok) { if (ok) toast(who ? (tm2 ? tm2.name : 'La squadra') + ' adesso è di ' + who.name + '.' : (tm2 ? tm2.name : 'La squadra') + ' adesso è libera.'); render(); });
       else render();
     }
-    else if (c === 'rsel') { tmp.rr = el.value; tmp.parsed = null; tmp.paste = ''; render(); }
+    else if (c === 'rsel') { tmp.rr = el.value; tmp.parsed = null; tmp.paste = ''; tmp.pdfErr = ''; render(); }
     // the FIS results PDF: read in the browser, the race chosen from its heading, then the same preview as pasted text
     else if (c === 'rpdf') {
       var pf = el.files && el.files[0];
       if (!pf || tmp.pdfBusy) return;
-      tmp.pdfBusy = pf.name; render();
-      fileBuf(pf).then(pdfText).then(function (txt) {
+      tmp.pdfBusy = pf.name; tmp.pdfErr = ''; render();
+      fileBuf(pf).then(readPdf).then(function (txt) {
         tmp.pdfBusy = false;
         if (!/[a-z]{3}/i.test(txt)) { toast('Nel PDF non trovo testo: carica il PDF dei risultati scaricato dal sito della FIS.'); render(); return; }
         var w = pdfRace(txt), note = '';
@@ -1639,7 +1664,12 @@
         toast(pr.matched ? 'PDF letto: ' + raceLabel(rp.g, rp.t, rp.d, rp.v) + '. ' + parts.join(', ') + '. Controlla l\'anteprima e premi «Usa questi risultati».' : 'Nel PDF non trovo atleti del listone: è il PDF dei risultati di questa gara?');
         render();
         var pv = D.getElementById('rprev'); if (pv && pv.scrollIntoView) pv.scrollIntoView({ block: 'start' });
-      }, function () { tmp.pdfBusy = false; toast('Non riesco a leggere questo PDF: riprova, oppure incolla la classifica qui sotto.'); render(); });
+      }).then(null, function (er) {
+        tmp.pdfBusy = false;
+        tmp.pdfErr = pf.name + ': ' + ((er && er.detail) || (er && er.message) || 'errore') + ' · ' + (navigator.userAgent || '');
+        toast('Non riesco a leggere questo PDF: riprova, oppure incolla la classifica qui sotto.');
+        render();
+      });
       el.value = '';
     }
     else if (c === 'esel') { tmp.er = el.value; render(); }

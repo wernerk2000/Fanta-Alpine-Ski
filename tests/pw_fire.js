@@ -514,17 +514,38 @@ async function flowD(browser) {
   }, [lid, R]);
   await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="ris"]'); await H.wait(150);
   ok(await page.inputValue('#rsel') !== 'f01' && await page.$('#rpdf'), 'Risultati: another race selected, the PDF field there');
-  // a file that is not a PDF
+  // PDF.js out of reach (as on a phone whose browser cannot run it): the site's own reader does everything
+  let pdfjsHits = 0;
+  await page.route(/\/vendor\/pdfjs\//, r => { pdfjsHits++; r.abort(); });
+  // a file that is not a PDF: said so, with what each reader met
   const bad = SHOTS + 'pdf/not-a-pdf.pdf';
   fs.writeFileSync(bad, 'questo non è un pdf');
   await page.setInputFiles('#rpdf', bad);
   await page.waitForFunction(() => /Non riesco a leggere questo PDF/.test((document.getElementById('fs-toast') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => null);
-  ok(/Non riesco a leggere questo PDF/.test(await page.textContent('#fs-toast')), 'a file that is not a PDF: said so');
+  ok(/Non riesco a leggere questo PDF/.test(await page.textContent('#fs-toast')) && /lettore del sito: non è un PDF · PDF\.js:/.test(await page.textContent('#pdferr')), 'a file that is not a PDF: said so, with the details of both readers');
+  const errTxt = async () => (await page.$('#pdferr')) ? page.textContent('#pdferr') : '';
+  // the browser cannot open the picked file (a phone, a file from a cloud folder): the reason is shown
+  await page.evaluate(() => {
+    window.__frRead = FileReader.prototype.readAsArrayBuffer;
+    FileReader.prototype.readAsArrayBuffer = function () { const fr = this; Object.defineProperty(fr, 'error', { value: new DOMException('The file could not be read', 'NotReadableError') }); setTimeout(() => fr.onerror && fr.onerror(new Event('error')), 10); };
+  });
+  await page.setInputFiles('#rpdf', PDF);
+  await page.waitForFunction(() => /il browser non apre il file/.test((document.getElementById('pdferr') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => null);
+  ok(/f01\.pdf: il browser non apre il file \(NotReadableError: The file could not be read\)/.test(await errTxt()) && !(await page.$eval('#rpdf', e => e.disabled)), 'the browser cannot open the file: the reason shown, the field usable again');
+  await page.evaluate(() => { FileReader.prototype.readAsArrayBuffer = window.__frRead; });
+  // a slip after the reading: shown as well, the field not left on «Leggo…»
+  await page.evaluate(() => { window.__pr = FS.parseResults; FS.parseResults = () => { throw new Error('prova di errore'); }; });
+  await page.setInputFiles('#rpdf', PDF);
+  await page.waitForFunction(() => /prova di errore/.test((document.getElementById('pdferr') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => null);
+  ok(/f01\.pdf: prova di errore/.test(await errTxt()) && !(await page.$eval('#rpdf', e => e.disabled)) && !/Leggo/.test(await page.textContent('label[for="rpdf"]')), 'a slip after the reading: shown, the field not stuck');
+  await page.evaluate(() => { FS.parseResults = window.__pr; });
+  pdfjsHits = 0;
   await page.setInputFiles('#rpdf', PDF);
   await page.waitForFunction(() => /PDF letto/.test((document.getElementById('fs-toast') || {}).textContent || ''), null, { timeout: 20000 }).catch(() => null);
   const toastTxt = await page.textContent('#fs-toast');
   ok(/PDF letto: Gigante femminile di Sölden, sab 24 ott\. 30 atleti del listone in classifica, 2 usciti, 23 non qualificati/.test(toastTxt), 'PDF read: ' + toastTxt);
   ok(await page.inputValue('#rsel') === 'f01' && /Dal PDF f01\.pdf/.test(await page.textContent('#rprev')), 'the race is chosen from the PDF heading: f01');
+  ok(pdfjsHits === 0 && !(await page.$('#pdferr')), 'read by the site\'s own reader, PDF.js never asked');
   const unr = await page.textContent('#rprev');
   ok(/Julia Scheib/.test(unr) && await page.inputValue('#pn-f-julia-scheib') === '2' && await page.inputValue('#pn-f-marta-bassino') === '28' && await page.inputValue('#pn-f-laura-pirovano') === '31' && await page.inputValue('#pn-f-stephanie-brunner') === '19',
     'preview: who went out and who did not qualify, with their bibs');
@@ -539,6 +560,23 @@ async function flowD(browser) {
   if (!(await page.$('.rdet'))) { await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150); }
   const rd = await page.textContent('.rdet');
   ok(/Scheib · uscito · −10/.test(rd) && /Bassino · non qualificato · −5/.test(rd) && /Brunner · non qualificato · −5/.test(rd) && /Moltzan · 1°/.test(rd), 'race page: Scheib out (bib 2) −10, Bassino (28) and Brunner (19) not qualified −5, Moltzan 1st');
+  // the men's PDF (the one that failed on Werner's phone) with PDF.js only: the site's reader switched off
+  const PDFM = SHOTS + 'pdf/m01.pdf';
+  if (fs.existsSync(PDFM)) {
+    await page.unroute(/\/vendor\/pdfjs\//);
+    await page.evaluate(() => { window.__ownReader = window.PDFText; window.PDFText = null; });
+    await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="ris"]'); await H.wait(150);
+    await page.setInputFiles('#rpdf', PDFM);
+    await page.waitForFunction(() => /PDF letto: Gigante maschile/.test((document.getElementById('fs-toast') || {}).textContent || ''), null, { timeout: 30000 }).catch(() => null);
+    const mt = await page.textContent('#fs-toast'), msel = await page.inputValue('#rsel'), merr = await page.$('#pdferr') ? await page.textContent('#pdferr') : '';
+    ok(/PDF letto: Gigante maschile di Sölden, dom 25 ott\. 26 atleti del listone in classifica, 6 usciti, 21 non qualificati/.test(mt) && msel === 'm01',
+      'men\'s PDF read by PDF.js when the site\'s reader is off: m01 chosen, 26 placed, 6 DNF, 21 DNQ' + (msel === 'm01' && !merr ? '' : ' — got ' + JSON.stringify([mt, msel, merr])));
+    await page.evaluate(() => { window.PDFText = window.__ownReader; });
+    await page.route(/\/vendor\/pdfjs\//, r => r.abort());
+    await page.setInputFiles('#rpdf', PDFM);
+    await page.waitForFunction(() => /PDF letto: Gigante maschile/.test((document.getElementById('fs-toast') || {}).textContent || '') && !document.getElementById('rpdf').disabled, null, { timeout: 30000 }).catch(() => null);
+    ok(/26 atleti del listone in classifica, 6 usciti, 21 non qualificati/.test(await page.textContent('#fs-toast')), 'and the same with the site\'s reader alone');
+  }
   ok(!page.errors.length, 'no page errors ' + JSON.stringify(page.errors));
   await page.context().close();
 }
