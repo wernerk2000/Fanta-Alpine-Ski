@@ -1629,6 +1629,9 @@
         var rp = race(tmp.rr);
         tmp.paste = txt;
         var pr = readResults(rp, txt, 'PDF FIS');
+        // the wrong PDF from the FIS page: the start list, or the results after the first run
+        if (/start\s*list|startliste/i.test(txt.slice(0, 700))) note += (note ? ' ' : '') + 'Questo sembra l\'ordine di partenza, non i risultati.';
+        else if (FS.CAT[rp.t] === 'T' && pr.matched && !pr.runs) note += (note ? ' ' : '') + 'Nel PDF non trovo i tempi delle due manche: serve il PDF dei risultati finali, non quello della 1ª manche.';
         tmp.parsed.file = pf.name; tmp.parsed.note = note;
         var parts = [pr.matched + ' atleti del listone in classifica'];
         if (pr.nf.length) parts.push(pr.nf.length + (pr.nf.length === 1 ? ' uscito' : ' usciti'));
