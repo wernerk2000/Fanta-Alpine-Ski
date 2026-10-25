@@ -40,7 +40,7 @@ C = FS.compute(S); T = C.raceRes.m01.teams.t1;
 ok(T.subIn && T.score === 80 - 10, 'Odermatt did not start → reserve Kristoffersen in, he goes out: 80 − 10 (got ' + T.score + ')');
 FS.apply(S, { k: 'res', r: 'm01', list: [['m-loic-meillard', 2, 4]], dns: [], nc: [['m-marco-odermatt', 6]], src: 't', at: 'x' });
 C = FS.compute(S); T = C.raceRes.m01.teams.t1;
-ok(T.score === 80 - 10 && C.raceRes.m01.out['m-marco-odermatt'].st === 'nc', 'Odermatt bib 6 not qualified: −10');
+ok(T.score === 80 - 10 && C.raceRes.m01.out['m-marco-odermatt'].st === 'nq', 'Odermatt bib 6 not qualified (giant slalom: DNQ): −10');
 ok(C.T.t1.total === 70, 'season total can include maluses (got ' + C.T.t1.total + ')');
 
 // ---- parser: sections and bibs

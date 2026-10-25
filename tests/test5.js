@@ -13,7 +13,7 @@ ok(FS.view(mig, 'l1').purchases[0].a === 'm-marco-odermatt', 'the view of that l
 // ---- several leagues
 let R = FS.clone(ROOT0);
 const st = V0.league.seasonStart;
-const base = FS.clone(V0.league); base.name = 'Ski team'; base.malusDnf = 0;
+const base = FS.clone(V0.league); base.name = 'Ski team'; base.malusDnf = 0; base.malusOut = { dnf: [0, 0, 0], dnq: [0, 0, 0] };
 ok(FS.applyOp(R, { k: 'lgAdd', item: { id: 'l2', league: base, teams: [{ id: 'x1', name: 'Rossi', owner: '' }, { id: 'x2', name: 'Bianchi', owner: '' }], purchases: [], lineups: {} } }), 'second league created');
 ok(!FS.applyOp(R, { k: 'lgAdd', item: { id: 'l2', league: base, teams: [], purchases: [], lineups: {} } }), 'league ids are unique');
 ok(FS.applyOp(R, { k: 'buy', lg: 'l1', id: 'b1', a: 'm-marco-odermatt', t: 't1', price: 150, from: st }), 'Odermatt to Squadra 1 in league 1');

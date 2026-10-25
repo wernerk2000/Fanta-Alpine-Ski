@@ -102,21 +102,32 @@ var FS = (function () {
     if (CAT[race.t] === 'V') return bib <= 19 && bib % 2 === 1;
     return bib <= ((L && L.topGroup) || 7);
   }
-  // malus for not finishing: the full one for bibs up to bibLate (30), a lighter one from bib 31 on
-  // (default 5, never more than the full one); an unknown bib (0) takes the full one
-  function dnfMalus(bib, L) {
-    var full = (L && L.malusDnf) || 0;
-    if (!(bib > ((L && L.bibLate) || 30))) return full;
-    return L.malusDnfLate != null ? L.malusDnfLate : Math.min(5, full);
+  // maluses by start number, in three bands: bibs 1-15, 16-30, from 31 (bibMid, bibLate).
+  // dnf: out of the race (fell, disqualified, did not start run 2); dnq: not qualified for run 2 (giant slalom and slalom).
+  // league setting malusOut {dnf: [..3], dnq: [..3]}; without it, the rule of 2026/27: dnf 10/10/0, dnq 10/5/0
+  // (a league saved earlier keeps its own DNF malus for bibs 1-30; with none, it has no DNQ malus either)
+  var MALUS_OUT = { dnf: [10, 10, 0], dnq: [10, 5, 0] };
+  function outBands(L, k) {
+    var m = L && L.malusOut && L.malusOut[k];
+    if (m && m.length === 3) return m;
+    var md = L && L.malusDnf != null ? L.malusDnf : 10;
+    return k === 'dnf' ? [md, md, 0] : md ? MALUS_OUT.dnq : [0, 0, 0];
   }
+  // an unknown bib (0): the first band for who went out, nothing for who did not qualify
+  function outMalus(k, bib, L) {
+    var b = outBands(L, k), mid = (L && L.bibMid) || 15, late = (L && L.bibLate) || 30;
+    if (!bib) return k === 'dnf' ? b[0] : 0;
+    return bib > late ? b[2] : bib > mid ? b[1] : b[0];
+  }
+  function dnfMalus(bib, L) { return outMalus('dnf', bib, L); }
   // full fanta score of one athlete in one race, multiplier included.
-  // Bonuses need a finish in the points. Maluses: not finishing (and then nothing else), a first-group athlete
-  // outside the top 15, the run-1 leader outside the top 5; only the heavier of the last two counts.
+  // Bonuses need a finish in the points. Maluses: not finishing (and then nothing else), not qualifying for run 2
+  // (st 'nq'), a first-group athlete outside the top 15, the run-1 leader outside the top 5; only the heaviest counts.
   function scoreOf(e, race, L, q, sk, mult) {
-    var m = mult || 1, o = { base: 0, bBib: 0, bGain: 0, bBest: 0, bSer: 0, serK: null, serN: 0, bonus: 0, mDnf: 0, mTop: 0, mLead: 0, malus: 0, v: 0 };
+    var m = mult || 1, o = { base: 0, bBib: 0, bGain: 0, bBest: 0, bSer: 0, serK: null, serN: 0, bonus: 0, mDnf: 0, mDnq: 0, mTop: 0, mLead: 0, malus: 0, v: 0 };
     L = L || {};
     if (e.st === 'dnf') {
-      o.mDnf = r1(-dnfMalus(e.bib, L) * m);
+      o.mDnf = r1(-outMalus('dnf', e.bib, L) * m);
       o.malus = o.v = o.mDnf;
       return o;
     }
@@ -131,8 +142,10 @@ var FS = (function () {
     }
     var top = L.malusTop && firstGroup(e.bib, race, L) && !(e.rank >= 1 && e.rank <= 15) ? L.malusTop : 0;
     var lead = L.malusLead && CAT[race.t] === 'T' && e.r1 === 1 && !(e.rank >= 1 && e.rank <= 5) ? L.malusLead : 0;
-    if (top || lead) { if (top >= lead) o.mTop = r1(-top * m); else o.mLead = r1(-lead * m); }
-    o.malus = r1(o.mTop + o.mLead);
+    var nq = e.st === 'nq' && CAT[race.t] === 'T' ? outMalus('dnq', e.bib, L) : 0;
+    if (nq && nq >= top && nq >= lead) o.mDnq = r1(-nq * m);
+    else if (top || lead) { if (top >= lead) o.mTop = r1(-top * m); else o.mLead = r1(-lead * m); }
+    o.malus = r1(o.mTop + o.mLead + o.mDnq);
     o.v = r1(o.base + o.bonus + o.malus);
     return o;
   }
@@ -369,12 +382,14 @@ var FS = (function () {
       // athletes without a place: out of the race (malus), or classified outside the list / not qualified (malus if first group)
       var X = {};
       Object.keys(dnf).forEach(function (a) { X[a] = { st: 'dnf', bib: dnfb[a], s: scoreOf({ rank: 0, bib: dnfb[a], r1: 0, r2: 0, st: 'dnf' }, r, L, 0, null, mult) }; });
-      Object.keys(ncb).forEach(function (a) { if (!P[a] && !X[a]) X[a] = { st: 'nc', bib: ncb[a], s: scoreOf({ rank: 0, bib: ncb[a], r1: 0, r2: 0 }, r, L, 0, null, mult) }; });
+      // in giant slalom and slalom, no place = not qualified for run 2 (DNQ); in downhill and super-G, beyond the 30th
+      var nqk = CAT[r.t] === 'T' ? 'nq' : 'nc';
+      Object.keys(ncb).forEach(function (a) { if (!P[a] && !X[a]) X[a] = { st: nqk, bib: ncb[a], s: scoreOf({ rank: 0, bib: ncb[a], r1: 0, r2: 0, st: nqk }, r, L, 0, null, mult) }; });
       function item(a, role, on) {
         var p = P[a], s = null;
         if (on) s = p ? p.s : X[a] ? X[a].s : scoreOf({ rank: 0, bib: 0, r1: 0, r2: 0 }, r, L, 0, null, mult);
         return { a: a, role: role, rank: rank[a] || null, bib: bibs[a] || ncb[a] || dnfb[a] || null, r1: p ? p.e.r1 || null : null, r2: p ? p.e.r2 || null : null, s: s,
-          bonus: s ? s.bonus : 0, malus: s ? s.malus : 0, dnf: !!dnf[a], dns: !!dns[a], v: s ? s.v : 0, counted: on };
+          bonus: s ? s.bonus : 0, malus: s ? s.malus : 0, dnf: !!dnf[a], dns: !!dns[a], nq: !!(X[a] && X[a].st === 'nq'), v: s ? s.v : 0, counted: on };
       }
       S.teams.forEach(function (t) {
         var e = eff[r.id][t.id], items = [], playing = 0;
@@ -539,7 +554,7 @@ var FS = (function () {
   return {
     PTS: PTS, CAT: CAT, DIDX: DIDX, GENDERS: GENDERS, clone: clone, rid: rid, r1: r1, romeTime: romeTime, weekKey: weekKey, lockOf: lockOf, startOf: startOf,
     giornate: giornate, cupPts: cupPts, scalePts: scalePts, fantaPts: fantaPts, bibBonus: bibBonus, bibGroup: bibGroup, TIERS: TIERS,
-    entry: entry, pack: pack, runBonus: runBonus, dnfMalus: dnfMalus, streakBonus: streakBonus, scoreOf: scoreOf, firstGroup: firstGroup, secs: secs, findBy: findBy, credits: credits, teamState: teamState, ownerNow: ownerNow, rosterAt: rosterAt,
+    entry: entry, pack: pack, runBonus: runBonus, dnfMalus: dnfMalus, outMalus: outMalus, outBands: outBands, MALUS_OUT: MALUS_OUT, streakBonus: streakBonus, scoreOf: scoreOf, firstGroup: firstGroup, secs: secs, findBy: findBy, credits: credits, teamState: teamState, ownerNow: ownerNow, rosterAt: rosterAt,
     canBuy: canBuy, checkLineup: checkLineup, apply: apply, applyAll: applyAll, applyOp: applyOp, migrate: migrate, view: view, LEAGUE_OPS: LEAGUE_OPS, compute: compute, norm: norm, words: words, parseResults: parseResults
   };
 })();

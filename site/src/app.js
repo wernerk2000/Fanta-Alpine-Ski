@@ -479,6 +479,7 @@
     if (s.bGain) p.push(['+', 'rimonta', s.bGain]);
     if (s.bBest) p.push(['+', 'miglior 2ª manche', s.bBest]);
     if (s.bSer) p.push(['+', s.serK === 'w' ? s.serN + 'ª vittoria di fila' : s.serN + '° podio di fila', s.bSer]);
+    if (s.mDnq) p.push(['−', 'malus non qualificato', -s.mDnq]);
     if (s.mTop) p.push(['−', 'malus primo gruppo', -s.mTop]);
     if (s.mLead) p.push(['−', 'malus primo dopo la 1ª', -s.mLead]);
     return p;
@@ -491,7 +492,7 @@
   }
   function itemText(it, r) {
     var a = ath(it.a), nm = esc(a ? short(a) : it.a);
-    var st = it.dns ? 'non partito' : it.dnf ? 'uscito · ' + fmt(it.v) : it.rank ? it.rank + '° · ' + fmt(it.v) : 'fuori dai 30' + (it.v ? ' · ' + fmt(it.v) : '');
+    var st = it.dns ? 'non partito' : it.dnf ? 'uscito · ' + fmt(it.v) : it.rank ? it.rank + '° · ' + fmt(it.v) : (it.nq ? 'non qualificato' : 'fuori dai 30') + (it.v ? ' · ' + fmt(it.v) : '');
     var pt = it.s && !it.dnf ? partsText(it.s) : '', bx = pt ? ' <span class="bx">' + esc(pt) + '</span>' : '';
     if (it.role === 'R') return '<span class="' + (it.counted ? 'cnt' : 'out') + '">riserva ' + nm + (it.counted ? ' entrata · ' + st + bx : ' non entrata') + '</span>';
     return '<span class="' + (it.counted ? 'cnt' : 'out') + '">' + nm + ' · ' + st + bx + '</span>';
@@ -542,7 +543,7 @@
     if (unpl.length) {
       body += '<tr><td colspan="4" class="small muted">In rosa, senza posizione</td></tr>';
       unpl.forEach(function (aid) {
-        var a = ath(aid), o = rr.out[aid], stt = rr.dns[aid] ? 'non partito' : o && o.st === 'dnf' ? 'uscito' : o ? 'fuori classifica' : 'fuori dai 30';
+        var a = ath(aid), o = rr.out[aid], stt = rr.dns[aid] ? 'non partito' : o && o.st === 'dnf' ? 'uscito' : o && o.st === 'nq' ? 'non qualificato' : o ? 'fuori classifica' : 'fuori dai 30';
         body += '<tr><td class="num">–</td><td>' + (a ? esc(a.n) + ' <span class="nat">' + esc(a.c) + '</span>' : esc(aid)) + '<span class="rmeta">' + stt + (o && o.bib ? ' · pett. ' + o.bib : '') + '</span></td>' +
           '<td class="small">' + esc(own[aid]) + '</td><td class="r num">' + (o ? fmt(o.s.v) : rr.dns[aid] ? '–' : '0') + '</td></tr>';
       });
@@ -637,15 +638,22 @@
     items.push('Conta l\'ordine in calendario delle gare di quella disciplina: una gara senza podio interrompe la serie, anche se l\'atleta non parte. Le gare annullate non contano.');
     return block('Bonus serie', items);
   }
+  // "−10 con il pettorale fino al 15, −5 dal 16 al 30, nessun malus dal 31 in su" (bands with the same value merged)
+  function bandText(b, L) {
+    var mid = L.bibMid || 15, late = L.bibLate || 30, out = [];
+    [[1, mid, b[0]], [mid + 1, late, b[1]], [late + 1, 0, b[2]]].forEach(function (x) { var l = out[out.length - 1]; if (l && l[2] === x[2]) l[1] = x[1]; else out.push(x.slice()); });
+    return out.map(function (x) {
+      return (x[2] ? '−' + fmt(x[2]) : 'nessun malus') + ' ' + (out.length === 1 ? 'con qualsiasi pettorale' : !x[1] ? 'dal ' + x[0] + ' in su' : x[0] === 1 ? 'con il pettorale fino al ' + x[1] : 'dal ' + x[0] + ' al ' + x[1]);
+    }).join(', ');
+  }
   function malusBlock(L) {
-    var items = [];
-    var late = FS.dnfMalus(999, L);
-    if (L.malusDnf) items.push('−' + fmt(L.malusDnf) + ' se l\'atleta non arriva al traguardo: uscita, squalifica o non ripartito nella 2ª manche' +
-      (late !== L.malusDnf ? '; ' + (late ? '−' + fmt(late) : 'nessun malus') + ' se partiva con il pettorale dal ' + ((L.bibLate || 30) + 1) + ' in su.' : '.'));
+    var items = [], bd = FS.outBands(L, 'dnf'), bq = FS.outBands(L, 'dnq'), any = function (b) { return b.some(function (x) { return x > 0; }); };
+    if (any(bd)) items.push('Uscita (DNF): caduta, squalifica o non ripartito nella 2ª manche. ' + bandText(bd, L).replace(/^./, function (c) { return c.toUpperCase(); }) + '.');
+    if (any(bq)) items.push('Non qualificato per la 2ª manche (DNQ), in gigante e slalom: ' + bandText(bq, L) + '.');
     if (L.malusTop) items.push('−' + fmt(L.malusTop) + ' se un atleta del primo gruppo chiude oltre il 15° posto o non si qualifica per la 2ª manche. Primo gruppo: in gigante e slalom i pettorali dall\'1 al ' + (L.topGroup || 7) + '; in discesa e superG i pettorali dispari fino al 19, che scelgono i primi 10 della lista di partenza.');
     if (L.malusLead) items.push('−' + fmt(L.malusLead) + ' se chi è primo dopo la 1ª manche non chiude nei primi 5 (gigante e slalom).');
     if (!items.length) return '';
-    items.push('Per ogni atleta vale un solo malus, il più pesante, e chi non arriva prende solo quello dell\'uscita. Chi non prende il via non ha malus: entra la riserva.');
+    items.push('Per ogni atleta vale un solo malus, il più pesante, e chi esce prende solo quello dell\'uscita. Chi non prende il via non ha malus: entra la riserva.');
     return block('Malus', items);
   }
   function anyBonus(L) {
@@ -862,11 +870,17 @@
     h += '<div class="acts gap"><button type="button" class="mini" data-act="padd">Aggiungi alla classifica</button></div>';
     var unranked = Object.keys(ro).filter(function (a) { return !inList[a]; });
     if (unranked.length) {
-      h += '<div class="gap"><div class="lbl">In rosa, senza posizione</div><p class="hint">Non partito: non ha preso il via, entra la riserva. Uscito: uscita, squalifica o non ripartito nella 2ª manche, prende il malus, più leggero dal pettorale ' + ((L.bibLate || 30) + 1) + '. Fuori classifica: oltre il 30° o non qualificato, zero punti e malus solo se era nel primo gruppo. Per questi malus serve il pettorale.</p>' +
-        (function () { var n = unranked.filter(function (a) { return P.st[a] === 'dnf' && !P.nb[a]; }).length; return n ? '<p class="why">' + n + (n === 1 ? ' uscito senza pettorale: prende' : ' usciti senza pettorale: prendono') + ' il malus pieno. Scrivi il pettorale se partiva dal ' + ((L.bibLate || 30) + 1) + ' in su.</p>' : ''; })() + unranked.map(function (aid) {
+      h += '<div class="gap"><div class="lbl">In rosa, senza posizione</div><p class="hint">Non partito: non ha preso il via, entra la riserva. Uscito (DNF): caduta, squalifica o non ripartito nella 2ª manche. ' +
+        (FS.CAT[r.t] === 'T' ? 'Non qualificato (DNQ): fuori dai 30 della 1ª manche. ' : 'Oltre il 30°: zero punti, malus solo se era nel primo gruppo. ') + 'I malus dipendono dal pettorale: scrivilo.</p>' +
+        (function () {
+          var nf = unranked.filter(function (a) { return P.st[a] === 'dnf' && !P.nb[a]; }).length, nq = unranked.filter(function (a) { return (P.st[a] || 'nc') === 'nc' && !P.nb[a]; }).length, w = '';
+          if (nf) w += '<p class="why">' + nf + (nf === 1 ? ' uscito senza pettorale: prende' : ' usciti senza pettorale: prendono') + ' il malus più alto.</p>';
+          if (nq && FS.CAT[r.t] === 'T') w += '<p class="why">' + nq + (nq === 1 ? ' non qualificato senza pettorale: non prende' : ' non qualificati senza pettorale: non prendono') + ' nessun malus.</p>';
+          return w;
+        })() + unranked.map(function (aid) {
         var a = ath(aid), cur = P.st[aid] || 'nc', nm = esc(a ? a.n : aid);
         return '<div class="unr"><span class="un">' + nm + ' <span class="own">' + esc(ro[aid]) + '</span></span><span class="seg" role="group" aria-label="Esito di ' + nm + '">' +
-          stBtn(aid, 'dns', 'Non partito', cur) + stBtn(aid, 'dnf', 'Uscito', cur) + stBtn(aid, 'nc', 'Fuori classifica', cur) + '</span>' +
+          stBtn(aid, 'dns', 'Non partito', cur) + stBtn(aid, 'dnf', 'Uscito', cur) + stBtn(aid, 'nc', FS.CAT[r.t] === 'T' ? 'Non qualificato' : 'Oltre il 30°', cur) + '</span>' +
           '<span class="pbx"><label class="small muted" for="pn-' + esc(aid) + '">pett.</label>' + numIn('pn-' + aid, 'pnb', aid, P.nb[aid], 999, 'Pettorale') + '</span></div>';
       }).join('') + '</div>';
     }
@@ -1006,6 +1020,13 @@
     if (GADMIN) h += importBox();
     return h + '</div>';
   }
+  // three inputs for a malus by start number: bibs 1-15, 16-30, from 31
+  function bandIn(k, lab, L) {
+    var b = FS.outBands(L, k), mid = L.bibMid || 15, late = L.bibLate || 30, rng = ['dall\'1 al ' + mid, 'dal ' + (mid + 1) + ' al ' + late, 'dal ' + (late + 1) + ' in su'];
+    return '<p class="small muted gap">' + lab + '</p><div class="grid3">' + b.map(function (v, i) {
+      return '<label class="field" for="mo' + k + i + '"><span>' + rng[i] + '</span><input id="mo' + k + i + '" class="in" type="number" min="0" max="200" step="1" value="' + (v || 0) + '"></label>';
+    }).join('') + '</div>';
+  }
   function aImp() {
     var L = S.league;
     var pg = L.perGender || 6, open = !S.purchases.length;
@@ -1029,10 +1050,10 @@
       [['r2b', 'Miglior tempo 2ª manche', L.run2Best, 1], ['r2g', 'Per ogni posizione recuperata in 2ª manche', L.run2Gain, 0.5], ['skp', 'Podio consecutivo', L.streakPod, 1], ['skw', 'Vittoria consecutiva', L.streakWin, 1]].map(function (f) {
         return '<label class="field" for="' + f[0] + '"><span>' + f[1] + '</span><input id="' + f[0] + '" class="in" type="number" min="0" max="200" step="' + f[3] + '" value="' + (f[2] || 0) + '"></label>';
       }).join('') + '</div></div>' +
-      '<div class="panel"><div class="lbl">Malus · punti tolti</div><div class="grid2 gap">' +
-      [['mdf', 'Non arriva al traguardo, pettorale fino al ' + (L.bibLate || 30), L.malusDnf, 1], ['mdl', 'Non arriva al traguardo, pettorale dal ' + ((L.bibLate || 30) + 1), FS.dnfMalus(999, L), 1], ['mtp', 'Primo gruppo oltre il 15°', L.malusTop, 1], ['mld', 'Primo dopo la 1ª manche oltre il 5°', L.malusLead, 1], ['tgp', 'Primo gruppo in gigante e slalom: pettorali fino al', L.topGroup || 7, 1]].map(function (f) {
+      '<div class="panel"><div class="lbl">Malus · punti tolti</div>' + bandIn('dnf', 'Uscita (DNF), per pettorale', L) + bandIn('dnq', 'Non qualificato per la 2ª manche (DNQ), per pettorale', L) + '<div class="grid2 gap">' +
+      [['mtp', 'Primo gruppo oltre il 15°', L.malusTop, 1], ['mld', 'Primo dopo la 1ª manche oltre il 5°', L.malusLead, 1], ['tgp', 'Primo gruppo in gigante e slalom: pettorali fino al', L.topGroup || 7, 1]].map(function (f) {
         return '<label class="field" for="' + f[0] + '"><span>' + f[1] + '</span><input id="' + f[0] + '" class="in" type="number" min="0" max="200" step="' + f[3] + '" value="' + (f[2] || 0) + '"></label>';
-      }).join('') + '</div><p class="hint gap">Tieni il malus per l\'uscita dei pettorali fino al ' + (L.bibLate || 30) + ' almeno pari agli altri: così arrivare non vale mai meno che uscire.</p></div>' +
+      }).join('') + '</div><p class="hint gap">Per ogni pettorale tieni il malus per l\'uscita almeno pari a quello per la mancata qualificazione: così qualificarsi non vale mai meno che uscire.</p></div>' +
       '<div class="acts"><button type="button" class="btn" data-act="impsave">Aggiorna impostazioni</button></div>' +
       '<p class="hint">' + (open ? 'Gli atleti per squadra si possono cambiare finché l\'asta non è iniziata. ' : 'Fissi per questa stagione: ' + pg + ' uomini e ' + pg + ' donne per squadra. ') +
       'Sempre ' + (L.starters || 2) + ' titolari e 1 riserva per gara, formazione chiusa ' + lockText(L) + '.</p></div>';
@@ -1417,7 +1438,7 @@
         function bval(id, cur) { var x = Math.round(parseFloat(String(val(id)).replace(',', '.')) * 10) / 10; return x >= 0 && x <= 200 ? x : (cur || 0); }
         if (doOp({ k: 'set', f: { perGender: !S.purchases.length && npg >= 4 && npg <= 8 ? npg : (S.league.perGender || 6), budget: b >= 12 ? b : S.league.budget, refundPct: rf >= 0 && rf <= 100 ? rf : S.league.refundPct, name: val('sn').trim() || S.league.name, scale: val('ssc') === 'lin' ? 'lin' : 'fis', bonus30: bn >= 0 && bn <= 100 ? bn : (S.league.bonus30 || 0), bib: bib, bibMaxQ: bqv >= 0 ? bqv : 0, run2Best: bval('r2b', S.league.run2Best), run2Gain: bval('r2g', S.league.run2Gain), streakPod: bval('skp', S.league.streakPod), streakWin: bval('skw', S.league.streakWin),
           lockBefore: Math.min(600, Math.max(0, parseInt(val('slb'), 10) >= 0 ? parseInt(val('slb'), 10) : (S.league.lockBefore != null ? S.league.lockBefore : 60))),
-          malusDnf: bval('mdf', S.league.malusDnf), malusDnfLate: bval('mdl', FS.dnfMalus(999, S.league)), malusTop: bval('mtp', S.league.malusTop), malusLead: bval('mld', S.league.malusLead), topGroup: Math.min(30, Math.max(1, parseInt(val('tgp'), 10) || S.league.topGroup || 7)) } })) { toast('Impostazioni aggiornate.'); render(); }
+          malusOut: { dnf: [0, 1, 2].map(function (i) { return bval('modnf' + i, FS.outBands(S.league, 'dnf')[i]); }), dnq: [0, 1, 2].map(function (i) { return bval('modnq' + i, FS.outBands(S.league, 'dnq')[i]); }) }, malusTop: bval('mtp', S.league.malusTop), malusLead: bval('mld', S.league.malusLead), topGroup: Math.min(30, Math.max(1, parseInt(val('tgp'), 10) || S.league.topGroup || 7)) } })) { toast('Impostazioni aggiornate.'); render(); }
         break;
       case 'lgopen': ui.lid = v; saveUi(); tmp.lu = null; tmp.rel = null; tmp.parsed = null; setView(); go('classifica'); break;
       case 'lgdel': tmp.lgdel = v; render(); break;

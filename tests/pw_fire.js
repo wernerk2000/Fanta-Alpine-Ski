@@ -442,29 +442,44 @@ async function flowC(browser) {
   ok(/Squadra 1: formazione per GS Sölden salvata/.test(await page.textContent('#fs-toast')), 'saved, for Squadra 1');
   await H.click('#tab-squadre'); await H.click('[data-act="tsel"][data-v="' + T2 + '"]'); await H.wait(100);
   ok(/Gare chiuse/.test(await H.txt()) && await page.$('[data-act="luopen"][data-v="f01|' + T2 + '"]'), 'Squadre: the closed races to correct, for the organiser');
-  // results with someone out: the bib decides the malus (−10 up to bib 30, −5 from 31)
+  // results with DNF and DNQ: the bib decides the malus (DNF −10 up to bib 30, none from 31;
+  // DNQ −10 up to bib 15, −5 from 16 to 30, none from 31)
   await page.clock.setFixedTime(new Date('2026-10-24T14:00:00Z'));
   await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="ris"]'); await H.wait(100);
   await page.selectOption('#rsel', 'f01');
   await page.fill('#rpaste', `1 3 6535455 HECTOR Sara 1992 SWE 1:05.00 1:06.00 2:11.00
 2 5 6535774 SCHEIB Julia 1998 AUT 1:05.20 1:06.10 2:11.30
 3 9 6535237 RAST Camille 1999 SUI 1:05.40 1:06.20 2:11.60
+4 2 6535001 SHIFFRIN Mikaela 1995 USA 1:05.50 1:06.30 2:11.80
+Did not qualify for 2nd run
+18 425800 STJERNESUND Thea Louise 1996 NOR
 Did not finish 1st run
 33 425929 ROBINSON Alice 2001 NZL
 7 6536100 MOLTZAN Paula 1994 USA`);
   await H.click('[data-act="parse"]'); await H.wait(100);
-  ok(/pett\./.test(await H.txt()) && await page.inputValue('#pn-f-alice-robinson') === '33', 'preview: Robinson out, bib 33 read from the paste');
+  ok(await page.inputValue('#pn-f-alice-robinson') === '33' && await page.inputValue('#pn-f-thea-louise-stjernesund') === '18' && /Non qualificato \(DNQ\)/.test(await H.txt()), 'preview: Robinson out (bib 33), Stjernesund not qualified (bib 18)');
   await H.click('[data-act="psave"]'); await H.wait(400);
   const res = JSON.parse((await H.docs())['results/f01'].json);
-  ok(res.dnf.some(x => Array.isArray(x) && x[0] === 'f-alice-robinson' && x[1] === 33) && res.dnf.some(x => Array.isArray(x) && x[0] === 'f-paula-moltzan' && x[1] === 7), 'results keep the bib of who went out');
+  ok(res.dnf.some(x => Array.isArray(x) && x[0] === 'f-alice-robinson' && x[1] === 33) && res.nc.some(x => x[0] === 'f-thea-louise-stjernesund' && x[1] === 18), 'results keep the bibs of who went out and who did not qualify');
   await H.click('#tab-gare'); await H.wait(100);
   if (!(await page.$('.rdet'))) { await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150); }
   const rd = await page.textContent('.rdet');
-  ok(/Robinson · uscito · −5/.test(rd), 'Robinson out with bib 33: −5 (' + (rd.match(/Robinson[^R]{0,30}/) || [''])[0] + ')');
+  ok(/Robinson · uscito · 0/.test(rd), 'Robinson out with bib 33: no malus');
+  ok(/Stjernesund · non qualificato · −5/.test(rd), 'Stjernesund not qualified with bib 18: −5');
+  await shot('c_dnq');
   await H.click('#tab-regole'); await H.wait(60);
-  ok(/−10 se l'atleta non arriva al traguardo.*; −5 se partiva con il pettorale dal 31 in su/.test(await H.txt()), 'rules: −10, or −5 from bib 31');
+  const rules = await H.txt();
+  ok(/Uscita \(DNF\): caduta, squalifica o non ripartito nella 2ª manche\. −10 con il pettorale fino al 30, nessun malus dal 31 in su\./.test(rules), 'rules: DNF −10 up to bib 30, none from 31');
+  ok(/Non qualificato per la 2ª manche \(DNQ\), in gigante e slalom: −10 con il pettorale fino al 15, −5 dal 16 al 30, nessun malus dal 31 in su\./.test(rules), 'rules: DNQ −10 up to 15, −5 from 16 to 30, none from 31');
   await H.click('#tab-gestione'); await H.click('[data-act="adm"][data-v="imp"]'); await H.wait(60);
-  ok(await page.inputValue('#mdf') === '10' && await page.inputValue('#mdl') === '5', 'Impostazioni: −10 up to bib 30, −5 from 31');
+  const bands = [];
+  for (const k of ['dnf', 'dnq']) for (const i of [0, 1, 2]) bands.push(await page.inputValue('#mo' + k + i));
+  ok(bands.join() === '10,10,0,10,5,0', 'Impostazioni: DNF 10/10/0 and DNQ 10/5/0 (' + bands.join() + ')');
+  await page.fill('#modnq1', '6'); await H.click('[data-act="impsave"]'); await H.wait(400);
+  ok(JSON.stringify((await H.docs())['leagues/' + lid].settings.malusOut) === '{"dnf":[10,10,0],"dnq":[10,6,0]}', 'settings saved: DNQ bibs 16-30 now 6');
+  await H.click('#tab-gare'); await H.wait(100);
+  if (!(await page.$('.rdet'))) { await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150); }
+  ok(/Stjernesund · non qualificato · −6/.test(await page.textContent('.rdet')), 'scores follow the new setting at once');
   await H.logout(); await H.login('anna@example.it', 'annapass'); await H.wait(300);
   await H.click('#tab-gare'); await H.click('[data-act="race"][data-v="f01"]'); await H.wait(150);
   ok(/Scheib · 2°/.test(await page.textContent('.rdet')) && /Rast · 3°/.test(await page.textContent('.rdet')) && !(await page.$('.rdet [data-act="luopen"]')), 'Anna sees her corrected lineup scoring (Scheib 2nd, Rast 3rd), and cannot change any');
